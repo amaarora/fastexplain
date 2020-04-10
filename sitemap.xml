@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <url>
+<loc>https://amaarora.github.io/fastexplain/2020/03/24/DataBlocks-API.html</loc>
+<lastmod>2020-03-24T00:00:00-05:00</lastmod>
+</url>
+<url>
+<loc>https://amaarora.github.io/fastexplain/2020/03/26/DataBlocks-API-multi-label-classification.html</loc>
+<lastmod>2020-03-26T00:00:00-05:00</lastmod>
+</url>
+<url>
+<loc>https://amaarora.github.io/fastexplain/2020/03/31/The-Fastai-GetAttr.html</loc>
+<lastmod>2020-03-31T00:00:00-05:00</lastmod>
+</url>
+<url>
 <loc>https://amaarora.github.io/fastexplain/about/</loc>
 </url>
 <url>
