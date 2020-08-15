@@ -1,0 +1,415 @@
+<h1 id="label-smoothing-explained-using-microsoft-excel">Label Smoothing Explained using Microsoft Excel</h1>
+
+<ol id="markdown-toc">
+  <li><a href="#label-smoothing-explained-using-microsoft-excel" id="markdown-toc-label-smoothing-explained-using-microsoft-excel">Label Smoothing Explained using Microsoft Excel</a>    <ol>
+      <li><a href="#introduction" id="markdown-toc-introduction">Introduction</a></li>
+      <li><a href="#why-do-we-need-label-smoothing" id="markdown-toc-why-do-we-need-label-smoothing">Why do we need Label Smoothing?</a></li>
+      <li><a href="#what-is-label-smoothing" id="markdown-toc-what-is-label-smoothing">What is Label Smoothing?</a></li>
+      <li><a href="#label-smoothing-in-microsoft-excel" id="markdown-toc-label-smoothing-in-microsoft-excel">Label Smoothing in Microsoft Excel</a></li>
+      <li><a href="#fastaipytorch-implementation-of-label-smoothing-cross-entropy-loss" id="markdown-toc-fastaipytorch-implementation-of-label-smoothing-cross-entropy-loss">Fastai/PyTorch Implementation of Label Smoothing Cross Entropy loss</a></li>
+      <li><a href="#comparing-microsoft-excel-results-with-pytorch" id="markdown-toc-comparing-microsoft-excel-results-with-pytorch">Comparing Microsoft Excel results with PyTorch</a></li>
+      <li><a href="#conclusion" id="markdown-toc-conclusion">Conclusion</a></li>
+      <li><a href="#references" id="markdown-toc-references">References</a></li>
+      <li><a href="#credits" id="markdown-toc-credits">Credits</a></li>
+    </ol>
+  </li>
+</ol>
+
+<h2 id="introduction">Introduction</h2>
+<p>In this blogpost, together, we:</p>
+<ul>
+  <li>Read and understand about Label Smoothing from <a href="https://arxiv.org/abs/1512.00567">Rethinking the Inception Architecture for Computer Vision</a> research paper</li>
+  <li>Look at why we need Label Smoothing?</li>
+  <li>Re-implement Label Smoothing in Microsoft Excel step by step</li>
+  <li>Compare the results from our MS Excel implementation with <code class="highlighter-rouge">Fastai</code>/<code class="highlighter-rouge">PyTorch</code> versions of Label Smoothing</li>
+</ul>
+
+<p><strong>Why are we using Microsoft Excel?</strong></p>
+
+<p>It’s a valid question you might ask and I wasn’t a big fan of MS Excel either until I saw <a href="https://youtu.be/CJKnDu2dxOE?t=7482">this</a> video by <a href="https://twitter.com/jeremyphoward">Jeremy Howard</a> about <a href="https://en.wikipedia.org/wiki/Cross_entropy">Cross Entropy Loss</a>. In the video Jeremy explains Cross Entropy Loss using Microsoft Excel. It clicked and I understood it very well even with the fancy math in the <a href="https://leimao.github.io/blog/Cross-Entropy-KL-Divergence-MLE/">cross entropy loss formula</a>.</p>
+
+<p><img src="/images/cross_entropy.png" alt="" title="cross entropy loss" /></p>
+
+<p>And that is my hope here too! In this blogpost I hope that together we can see past the math and get the intuition for <strong>Label Smoothing</strong> and then later be able to implement it in a language/framework of our choice.</p>
+
+<p>So, let’s get started!</p>
+
+<h2 id="why-do-we-need-label-smoothing">Why do we need Label Smoothing?</h2>
+<p>Let’s consider we are faced with a multi-class image classification problem. Someone presents to us five images with labels -</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Image Name</th>
+      <th>Label</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>img-1.jpg</td>
+      <td>Dog</td>
+    </tr>
+    <tr>
+      <td>img-2.jpg</td>
+      <td>Cat</td>
+    </tr>
+    <tr>
+      <td>img-3.jpg</td>
+      <td>Horse</td>
+    </tr>
+    <tr>
+      <td>img-4.jpg</td>
+      <td>Bear</td>
+    </tr>
+    <tr>
+      <td>img-5.jpg</td>
+      <td>Kangaroo</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>As humans, we will quickly be able to assign labels to the image just by looking at them, for example we know that <code class="highlighter-rouge">img-1.jpg</code> is that of a dog, <code class="highlighter-rouge">img-2.jpg</code> is a cat and so on.</p>
+
+<p>Let’s one-hot encode the labels, so our labels get updated to:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Image Name</th>
+      <th>is_dog</th>
+      <th>is_cat</th>
+      <th>is_horse</th>
+      <th>is_bear</th>
+      <th>is_kroo</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>img-1.jpg</td>
+      <td>1</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td>img-2.jpg</td>
+      <td>0</td>
+      <td>1</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td>img-3.jpg</td>
+      <td>0</td>
+      <td>0</td>
+      <td>1</td>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td>img-4.jpg</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>1</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td>img-5.jpg</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>1</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Let’s imagine that we used the above set of 5 images and the labels and trained a deep learning model which in it’s early stages learns to predict a set of logits for each class like so:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Image Name</th>
+      <th>is_dog</th>
+      <th>is_cat</th>
+      <th>is_horse</th>
+      <th>is_bear</th>
+      <th>is_kroo</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>img-1.jpg</td>
+      <td>4.7</td>
+      <td>-2.5</td>
+      <td>0.6</td>
+      <td>1.2</td>
+      <td>0.4</td>
+    </tr>
+    <tr>
+      <td>img-2.jpg</td>
+      <td>-1.2</td>
+      <td>2.4</td>
+      <td>2.6</td>
+      <td>-0.6</td>
+      <td>2.34</td>
+    </tr>
+    <tr>
+      <td>img-3.jpg</td>
+      <td>-2.4</td>
+      <td>1.2</td>
+      <td>1.1</td>
+      <td>0.8</td>
+      <td>1.2</td>
+    </tr>
+    <tr>
+      <td>img-4.jpg</td>
+      <td>1.2</td>
+      <td>0.2</td>
+      <td>0.8</td>
+      <td>1.9</td>
+      <td>-0.6</td>
+    </tr>
+    <tr>
+      <td>img-5.jpg</td>
+      <td>-0.9</td>
+      <td>-0.1</td>
+      <td>-0.2</td>
+      <td>-0.5</td>
+      <td>1.6</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>This is pretty standard - right? This is what we do when we’re training an image classifier anyway. We pass a list of images and labels, make the model predict something, then calculate the cross-entropy loss and backpropogate to update the model’s parameters. And we keep doing this until the model learns to assign the correct labels to the corresponding images. So what’s the problem?</p>
+
+<p><strong>Here’s the important part:</strong></p>
+
+<p>For the cross-Entropy loss to really be at a minimum, each logit corresponding to the correct class needs to be <strong>significantly higher</strong> than the rest. That is, for example for row-1, <code class="highlighter-rouge">img-1.jpg</code> the logit of 4.7 corresponding to <code class="highlighter-rouge">is_dog</code> needs to be significantly higher than the rest. This is also the case for all the other rows.</p>
+
+<p>A mathematical proof is presented <a href="https://leimao.github.io/blog/Cross-Entropy-KL-Divergence-MLE/">here</a> by Lei Mao where he explains why minimizing cross entropy loss is equivalent to do maximum likelihood estimation.</p>
+
+<p>This case where, in order to minimise the cross-entropy loss, the logits corresponding to the true label need to be significantly higher than the rest can actually cause two problems.</p>
+
+<p>From the paper,</p>
+<blockquote>
+  <p>This, however, can cause two problems. First, it may result in over-fitting: if the model learns to assign full probability to the ground- truth label for each training example, it is not guaranteed to generalize. Second, it encourages the differences between the largest logit and all others to become large, and this, combined with the bounded gradient <code class="highlighter-rouge">∂ℓ/∂z,k</code> , reduces the ability of the model to adapt.</p>
+</blockquote>
+
+<p>In other words, our model could become overconfident of it’s predictions because to really minimise the loss, our model needs to be very sure of everything that it predicts. This is bad because it is then harder for the model to generalise and easier for it to overfit to the training data. We want the model to generalize and be able to look at other dogs, cats.. images that weren’t part of the training set and still be able to predict them well.</p>
+
+<h2 id="what-is-label-smoothing">What is Label Smoothing?</h2>
+
+<p>Label Smoothing was first introduced in <a href="https://arxiv.org/abs/1512.00567">Rethinking the Inception Architecture for Computer Vision</a>.</p>
+
+<p>From Section-7 - <strong>Model Regularization via Label Smoothing</strong> in the paper,</p>
+<blockquote>
+  <p>We propose a mechanism for encouraging the model to be less confident. While this may not be desired if the goal is to maximize the log-likelihood of training labels, it does regularize the model and makes it more adaptable. The method is very simple. Consider a distribution over labels u(k), independent of the training example x, and a smoothing parameter Є. For a training example with ground-truth label y, we replace the label distribution q(k/x) = δ(k,y) with</p>
+</blockquote>
+
+<p><img src="/images/Label_Smoothing_Formula.png" alt="" title="eq-1" /></p>
+
+<blockquote>
+  <p>which is a mixture of the original ground-truth distribution q(k|x) and the fixed distribution u(k), with weights 1 − Є. and Є, respectively. 
+In our experiments, we used the uniform distribution u(k) = 1/K, so that</p>
+</blockquote>
+
+<p><img src="/images/label_smoothing_eq2.png" alt="" title="eq-2" /></p>
+
+<p>In other words, instead of using the hard labels or the one-hot encoded variables where the true label is 1, let’s replace them with <code class="highlighter-rouge">(1-Є) * 1</code> where Є refers to the smoothing parameter. Once that’s done, we add some uniform noise <code class="highlighter-rouge">1/K</code> to the labels where K: total number of labels.</p>
+
+<p>So the updated distribution for the our examples with label smoothing factor <code class="highlighter-rouge">Є = 0.1</code> becomes:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Image Name</th>
+      <th>is_dog</th>
+      <th>is_cat</th>
+      <th>is_horse</th>
+      <th>is_bear</th>
+      <th>is_kroo</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>img-1.jpg</td>
+      <td>0.92</td>
+      <td>0.02</td>
+      <td>0.02</td>
+      <td>0.02</td>
+      <td>0.02</td>
+    </tr>
+    <tr>
+      <td>img-2.jpg</td>
+      <td>0.02</td>
+      <td>0.92</td>
+      <td>0.02</td>
+      <td>0.02</td>
+      <td>0.02</td>
+    </tr>
+    <tr>
+      <td>img-3.jpg</td>
+      <td>0.02</td>
+      <td>0.02</td>
+      <td>0.92</td>
+      <td>0.02</td>
+      <td>0.02</td>
+    </tr>
+    <tr>
+      <td>img-4.jpg</td>
+      <td>0.02</td>
+      <td>0.02</td>
+      <td>0.02</td>
+      <td>0.92</td>
+      <td>0.02</td>
+    </tr>
+    <tr>
+      <td>img-5.jpg</td>
+      <td>0.02</td>
+      <td>0.02</td>
+      <td>0.02</td>
+      <td>0.02</td>
+      <td>0.92</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>We get the updated distribution above because <code class="highlighter-rouge">1-Є = 0.9</code>. So as a first step, we replace all the true labels with <code class="highlighter-rouge">0.9</code> instead of 1. Next, we add a uniform noise <code class="highlighter-rouge">1/K = 0.02</code> because in our case <code class="highlighter-rouge">K</code> equals 5. Finally we get the above update distribution with uniform noise.</p>
+
+<p>The authors refer to the above change as <em>label-smoothing regularization</em> or LSR. And then we calculate the cross-entropy loss with the updated distribution LSR above.</p>
+
+<p>Now we train the model with the updated LSR instead and therefore, cross-entropy loss get’s updated to:</p>
+
+<p><img src="/images/LSR.png" alt="" title="eq-3" /></p>
+
+<p>Basically, the new loss <code class="highlighter-rouge">H(q′, p)</code> equals <code class="highlighter-rouge">1-Є</code> times the old loss <code class="highlighter-rouge">H(q, p)</code> + <code class="highlighter-rouge">Є</code> times the cross entropy loss of the noisy labels <code class="highlighter-rouge">H(u, p)</code>. This is key in understanding Label Smoothing - it is essentially the cross entropy loss with the noisy labels.</p>
+
+<p>Let’s now cut the math and implement this in Microsoft Excel step by step.</p>
+
+<h2 id="label-smoothing-in-microsoft-excel">Label Smoothing in Microsoft Excel</h2>
+<p>In this section we implement label smoothing in Microsoft Excel. We know that cross-entropy loss equals:</p>
+
+<p><img src="/images/cross_entropy.png" alt="" title="eq-4" /></p>
+
+<p>Great, and from <a href="https://amaarora.github.io/2020/07/18/label-smoothing.html#what-is-label-smoothing">section-2</a>, we also know that Label Smoothing loss is actually the cross entropy loss with the noisy labels.</p>
+
+<p>Let’s consider we have five images again, but this time of only cats and dogs.</p>
+
+<p><img src="/images/ce_loss_ex1.png" alt="" title="fig-1: one-hot encoded labels" /></p>
+
+<p>At the moment, the labels are one-hot encoded. Let’s consider we are using a smoothing factor <code class="highlighter-rouge">Є</code> of <code class="highlighter-rouge">0.1</code>. In this case, the updated labels become:</p>
+
+<p><img src="/images/ce_loss_ex2.png" alt="" title="fig-2: Label Smoothing Regularized labels" /></p>
+
+<p>We get <code class="highlighter-rouge">fig-2</code> by implementing <code class="highlighter-rouge">eq-2</code> on <code class="highlighter-rouge">fig-1</code>. So, now we have our <em>LSR labels</em>. Next step is to simply calculate the cross-entropy loss. We will use the <a href="https://github.com/fastai/fastai/blob/master/courses/dl1/excel/entropy_example.xlsx">fastai implementation of cross-entropy loss in excel</a>, and use it on our <em>LSR labels</em> to calculate the <code class="highlighter-rouge">Label Smoothing Cross Entropy</code> Loss.</p>
+
+<p>Let’s consider that our model learns to predict the following logits for each class like so:</p>
+
+<p><img src="/images/ce_loss_ex3.png" alt="" title="fig-3: Model logits" /></p>
+
+<p>Also, to calculate the cross-entropy loss, we first need to convert the logits to probabilities. The logits are the outputs from the last linear layer of our deep learning model. To convert them to probabilities, we generally have a softmax layer in the end. Jeremy explains how to implement <strong>Cross-Entropy</strong> loss in Microsoft Excel <a href="https://youtu.be/AcA8HAYh7IE?t=1844">here</a> including <strong>Softmax</strong> implementation.</p>
+
+<p>This is the where you PAUSE, look at the video and understand how Jeremy implements <strong>Softmax</strong> and <strong>Cross-Entropy</strong> loss in Microsoft Excel. If you already know how, great, let’s move on.</p>
+
+<p>We repeat the same process of applying <strong>Softmax</strong> operation to the logits to then get our probabilities like so:</p>
+
+<p><img src="/images/ce_loss_ex4.png" alt="" title="fig-4" /></p>
+
+<p>What we have essentially done, is that we take the exponential of the logits, to get <code class="highlighter-rouge">exp (cat)</code> and <code class="highlighter-rouge">exp (dog)</code> from <code class="highlighter-rouge">logit (cat)</code> and <code class="highlighter-rouge">logit (dog)</code>. Next, we take get the <code class="highlighter-rouge">sum (exp)</code> by adding <code class="highlighter-rouge">exp (cat)</code> and <code class="highlighter-rouge">exp (dog)</code> along the rows. Finally, we get <code class="highlighter-rouge">prob (cat)</code> by dividing <code class="highlighter-rouge">exp (cat)</code> with <code class="highlighter-rouge">sum (exp)</code> and we get <code class="highlighter-rouge">prob (dog)</code> by <code class="highlighter-rouge">sum (exp)</code>. This is how we implement Softmax operation in Microsoft Excel.</p>
+
+<p>So, now that we have successfully converted logits to Probabilities for each image. The next step is simply to calculate the <strong>Cross-Entropy</strong> loss which from <code class="highlighter-rouge">eq-4</code>, is <code class="highlighter-rouge">∑q(x)log(p(x))</code> where <code class="highlighter-rouge">p(x)</code> refers to the predicted probability and <code class="highlighter-rouge">q(x)</code> refers to the ground truth label. In our case <code class="highlighter-rouge">q(x)</code> are the noisy labels, so, we get the <em>LabelSmoothingCrossEntropy</em> loss like so:</p>
+
+<p><img src="/images/ce_loss_ex6.png" alt="" title="fig-5" /></p>
+
+<p>Believe it or not, we have just successfully implemented <strong>Label Smoothing Cross Entropy</strong> loss in Microsoft Excel.</p>
+
+<h2 id="fastaipytorch-implementation-of-label-smoothing-cross-entropy-loss">Fastai/PyTorch Implementation of Label Smoothing Cross Entropy loss</h2>
+
+<p>The Label Smoothing Cross Entropy loss has been implemented in the wonderful fastai library like so:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># Helper functions from fastai
+</span><span class="k">def</span> <span class="nf">reduce_loss</span><span class="p">(</span><span class="n">loss</span><span class="p">,</span> <span class="n">reduction</span><span class="o">=</span><span class="s">'mean'</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">loss</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span> <span class="k">if</span> <span class="n">reduction</span><span class="o">==</span><span class="s">'mean'</span> <span class="k">else</span> <span class="n">loss</span><span class="o">.</span><span class="nb">sum</span><span class="p">()</span> <span class="k">if</span> <span class="n">reduction</span><span class="o">==</span><span class="s">'sum'</span> <span class="k">else</span> <span class="n">loss</span>
+</code></pre></div></div>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># Implementation from fastai https://github.com/fastai/fastai2/blob/master/fastai2/layers.py#L338
+</span><span class="k">class</span> <span class="nc">LabelSmoothingCrossEntropy</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="err">ε</span><span class="p">:</span><span class="nb">float</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">reduction</span><span class="o">=</span><span class="s">'mean'</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="err">ε</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">reduction</span> <span class="o">=</span> <span class="err">ε</span><span class="p">,</span><span class="n">reduction</span>
+    
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
+        <span class="c1"># number of classes
+</span>        <span class="n">c</span> <span class="o">=</span> <span class="n">output</span><span class="o">.</span><span class="n">size</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">log_preds</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="n">reduce_loss</span><span class="p">(</span><span class="o">-</span><span class="n">log_preds</span><span class="o">.</span><span class="nb">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">reduction</span><span class="p">)</span>
+        <span class="n">nll</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">nll_loss</span><span class="p">(</span><span class="n">log_preds</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">reduction</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">reduction</span><span class="p">)</span>
+        <span class="c1"># (1-ε)* H(q,p) + ε*H(u,p)
+</span>        <span class="k">return</span> <span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="err">ε</span><span class="p">)</span><span class="o">*</span><span class="n">nll</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="err">ε</span><span class="o">*</span><span class="p">(</span><span class="n">loss</span><span class="o">/</span><span class="n">c</span><span class="p">)</span> 
+</code></pre></div></div>
+<p>In PyTorch, <code class="highlighter-rouge">nn.CrossEntropyLoss()</code> is the same as <code class="highlighter-rouge">F.nll_loss(F.log_softmax(...))</code>. Therefore, in the implementation above, <code class="highlighter-rouge">nll</code> equates to <code class="highlighter-rouge">H(q,p)</code> from <strong>eq-3</strong>. And then, the <code class="highlighter-rouge">loss/c</code> equates to <code class="highlighter-rouge">H(u,p)</code> from <strong>eq-3</strong> as well where, <code class="highlighter-rouge">c</code> equals total number of classes.</p>
+
+<p>For reference again, we know that <strong>eq-3</strong> was:</p>
+
+<p><img src="/images/LSR.png" alt="" title="eq-3" /></p>
+
+<p>So, the above implementation can directly be compared to <strong>eq-3</strong> and the <strong>Label Smoothing Cross Entropy</strong> loss then becomes <code class="highlighter-rouge">(1-self.ε)*nll + self.ε*(loss/c)</code>.</p>
+
+<h2 id="comparing-microsoft-excel-results-with-pytorch">Comparing Microsoft Excel results with PyTorch</h2>
+<p>Great, now that we know how to implement <strong>Label Smoothing Cross Entropy</strong> loss in both Microsoft Excel and PyTorch, let’s compare the results. We take the same example as fig-3, and assume that our model in PyTorch predicts the same logits.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># X: model logits or outputs, y: true labels
+</span><span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span>
+    <span class="p">[</span><span class="mf">4.2</span><span class="p">,</span> <span class="o">-</span><span class="mf">2.4</span><span class="p">],</span> 
+    <span class="p">[</span><span class="mf">1.6</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.6</span><span class="p">],</span> 
+    <span class="p">[</span><span class="mf">3.6</span><span class="p">,</span> <span class="mf">1.2</span><span class="p">],</span> 
+    <span class="p">[</span><span class="o">-</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">],</span> 
+    <span class="p">[</span><span class="o">-</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">1.7</span><span class="p">]</span>
+<span class="p">])</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">])</span>
+
+<span class="k">print</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="s">'</span><span class="se">\n\n</span><span class="s">'</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+
+<span class="o">&gt;&gt;</span> <span class="c1">#out
+</span><span class="n">tensor</span><span class="p">([[</span> <span class="mf">4.2000</span><span class="p">,</span> <span class="o">-</span><span class="mf">2.4000</span><span class="p">],</span>
+        <span class="p">[</span> <span class="mf">1.6000</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.6000</span><span class="p">],</span>
+        <span class="p">[</span> <span class="mf">3.6000</span><span class="p">,</span>  <span class="mf">1.2000</span><span class="p">],</span>
+        <span class="p">[</span><span class="o">-</span><span class="mf">0.5000</span><span class="p">,</span>  <span class="mf">0.5000</span><span class="p">],</span>
+        <span class="p">[</span><span class="o">-</span><span class="mf">0.2500</span><span class="p">,</span>  <span class="mf">1.7000</span><span class="p">]])</span> 
+
+ <span class="n">tensor</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+</code></pre></div></div>
+
+<p>This is the same as Microsoft Excel and label <code class="highlighter-rouge">0</code> corresponds to <code class="highlighter-rouge">is_cat</code> and label <code class="highlighter-rouge">1</code> corresponds to <code class="highlighter-rouge">is_dog</code>. Let’s now calculate the <strong>Label Smoothing Cross Entropy</strong> loss.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">LabelSmoothingCrossEntropy</span><span class="p">(</span><span class="err">ε</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">reduction</span><span class="o">=</span><span class="s">'none'</span><span class="p">)(</span><span class="n">X</span><span class="p">,</span><span class="n">y</span><span class="p">)</span>
+
+<span class="o">&gt;&gt;</span> <span class="c1">#out
+</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.3314</span><span class="p">,</span> <span class="mf">2.1951</span><span class="p">,</span> <span class="mf">2.3668</span><span class="p">,</span> <span class="mf">1.2633</span><span class="p">,</span> <span class="mf">1.9855</span><span class="p">])</span>
+</code></pre></div></div>
+
+<p>The results match our Microsoft Excel <code class="highlighter-rouge">LS X-entropy</code> results from fig-5.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+<p>I hope that through this blog post, I have been able to help you get a thorough understanding of <strong>Label Smoothing</strong>. By implementing Label Smoothing Cross Entropy loss in Microsoft Excel, step by step, I also hope that I’ve been clear in my attempt to explain everything that goes on behind the scenes. Please feel free to reach out to me via Twitter at <a href="http://twitter.com/amaarora">@amaarora</a> - constructive feedback is always welcome.</p>
+
+<h2 id="references">References</h2>
+<ol>
+  <li><a href="https://towardsdatascience.com/a-simple-guide-to-the-versions-of-the-inception-network-7fc52b863202">A Simple Guide to the Versions of the Inception Network</a> by Bharat Raj</li>
+  <li><a href="https://papers.nips.cc/paper/8717-when-does-label-smoothing-help.pdf">When does label smoothing help</a> by Hinton et al</li>
+  <li><a href="https://arxiv.org/abs/1706.04599">On Calibration of Modern Neural Networks</a> aka Temperature Scaling by Pleiss et al</li>
+  <li><a href="https://leimao.github.io/blog/Label-Smoothing/">Mathematical explainations and proofs for label smoothing by Lei Mao</a></li>
+  <li><a href="https://youtu.be/vnOpEwmtFJ8">Label Smoothing + Mixup by Jeremy Howard</a></li>
+  <li><a href="https://youtu.be/CJKnDu2dxOE?t=7482">Cross Entropy Loss in Microsoft Excel by Jeremy Howard</a></li>
+</ol>
+
+<h2 id="credits">Credits</h2>
+<p>This blogpost wouldn’t have been possible without the help of my very talented friend <a href="https://twitter.com/abanerjee99">Atmadeep Banerjee</a>. Atmadeep, is currently interning and researching about <a href="https://paperswithcode.com/task/instance-segmentation/codeless">Instance Segmentation</a> at Harvard! You can find some of his very cool projects at his GitHub <a href="https://github.com/Atom-101">here</a>.</p>
+
+<p>Atmadeep was very kind to jump on a call with me for over an hour, when I was unable to replicate the results in Excel and help me find my mistake - <code class="highlighter-rouge">LOG</code> function in excel has base 10 whereas in <code class="highlighter-rouge">numpy</code> and <code class="highlighter-rouge">pytorch</code> it’s <code class="highlighter-rouge">LOG</code> to the base <code class="highlighter-rouge">e</code>! In MS Excel, <code class="highlighter-rouge">LOG</code> to the base <code class="highlighter-rouge">e</code> is referred to as <code class="highlighter-rouge">LN</code>.</p>
+
+<p>It was really funny to have spent the day reading numerous blog posts, few research papers and source code for PyTorch and then finding out that MS Excel implements <code class="highlighter-rouge">LOG</code> function differently than <code class="highlighter-rouge">numpy</code> and <code class="highlighter-rouge">pytorch</code>. But hey, lesson learnt, when in doubt, contact <a href="https://twitter.com/abanerjee99">@Atmadeep Banerjee</a> - he has an eye for detail.</p>

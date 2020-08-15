@@ -1,0 +1,262 @@
+<h1 id="efficientnet-rethinking-model-scaling-for-convolutional-neural-networks">EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks</h1>
+
+<ol id="markdown-toc">
+  <li><a href="#efficientnet-rethinking-model-scaling-for-convolutional-neural-networks" id="markdown-toc-efficientnet-rethinking-model-scaling-for-convolutional-neural-networks">EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks</a>    <ol>
+      <li><a href="#introduction" id="markdown-toc-introduction">Introduction</a></li>
+      <li><a href="#the-why" id="markdown-toc-the-why">The “WHY”?</a></li>
+      <li><a href="#the-how" id="markdown-toc-the-how">The “HOW”?</a>        <ol>
+          <li><a href="#compound-scaling" id="markdown-toc-compound-scaling">Compound Scaling</a></li>
+          <li><a href="#nueral-architecture-search" id="markdown-toc-nueral-architecture-search">Nueral Architecture Search</a></li>
+          <li><a href="#main-contributions---cs--nas" id="markdown-toc-main-contributions---cs--nas">Main Contributions - CS &amp; NAS</a></li>
+        </ol>
+      </li>
+      <li><a href="#comparing-conventional-methods-with-compound-scaling" id="markdown-toc-comparing-conventional-methods-with-compound-scaling">Comparing Conventional Methods with Compound Scaling</a>        <ol>
+          <li><a href="#depth" id="markdown-toc-depth">Depth</a></li>
+          <li><a href="#width" id="markdown-toc-width">Width</a></li>
+          <li><a href="#resolution" id="markdown-toc-resolution">Resolution</a></li>
+          <li><a href="#compound-scaling-1" id="markdown-toc-compound-scaling-1">Compound Scaling</a></li>
+        </ol>
+      </li>
+      <li><a href="#the-efficientnet-architecture-using-nas" id="markdown-toc-the-efficientnet-architecture-using-nas">The EfficientNet Architecture using NAS</a>        <ol>
+          <li><a href="#mnasnet-approach" id="markdown-toc-mnasnet-approach">MnasNet Approach</a></li>
+          <li><a href="#nueral-architecture-search-for-efficientnets" id="markdown-toc-nueral-architecture-search-for-efficientnets">Nueral Architecture Search for EfficientNets</a></li>
+          <li><a href="#inverted-bottleneck-mbconv" id="markdown-toc-inverted-bottleneck-mbconv">Inverted Bottleneck MBConv</a></li>
+        </ol>
+      </li>
+      <li><a href="#what-have-we-learnt-so-far" id="markdown-toc-what-have-we-learnt-so-far">What have we learnt so far</a></li>
+    </ol>
+  </li>
+</ol>
+
+<h2 id="introduction">Introduction</h2>
+<p>It brings me great pleasure as I begin writing about <strong>EfficientNets</strong> for three reasons:</p>
+<ol>
+  <li>At the time of writing, <a href="https://arxiv.org/abs/2003.08237">Fixing the train-test resolution discrepancy: FixEfficientNet</a> (family of <strong>EfficientNet</strong>) is the current State of Art on ImageNet with <strong>88.5%</strong> top-1 accuracy and <strong>98.7%</strong> top-5 accuracy.</li>
+  <li>As far as I am aware, this is the only blog that explains the EfficientNet Architecture in detail <strong>along with code implementations</strong>.</li>
+  <li>This blog post also sets up the base for future blog posts on <a href="https://arxiv.org/abs/1911.04252">Self-training with Noisy Student improves ImageNet classification</a>, <a href="https://arxiv.org/abs/1906.06423">Fixing the train-test resolution discrepancy</a> and <a href="https://arxiv.org/abs/2003.08237">Fixing the train-test resolution discrepancy: FixEfficientNet</a>.</li>
+</ol>
+
+<p>In this blog post, in <a href="https://amaarora.github.io/2020/08/13/efficientnet.html#the-why">The “Why”</a> section, we take a look at the superior performance of EfficientNets compared to their counterparts and understand why <strong>EfficientNet</strong>s are totally worth your time.</p>
+
+<p>Next, in <a href="https://amaarora.github.io/2020/08/13/efficientnet.html#the-how">“The How”</a> section, we start to unravel the magic inside <strong>EfficientNets</strong>. Particularly, we look at two main contributions from the research paper:</p>
+<ol>
+  <li>Compound Scaling</li>
+  <li>The EfficientNet Architecture (developed using Nueral Architecture Search)</li>
+</ol>
+
+<p>Having introduced the two contributions in <a href="https://amaarora.github.io/2020/08/13/efficientnet.html#the-how">The “How”</a>, we the compare the conventional methods of scaling with Compound Scaling approach in <a href="https://amaarora.github.io/2020/08/13/efficientnet.html#comparing-conventional-methods-with-compound-scaling">Comparing Conventional Methods with Compound Scaling</a>.</p>
+
+<p>Finally we look at the details of the <strong>EfficientNet</strong> Architecture in <a href="https://amaarora.github.io/2020/08/13/efficientnet.html#the-efficientnet-architecture-using-nas">The EfficientNet Architecture using NAS</a> and also look at code level implementations in <a href="">Code overview in PyTorch</a>.</p>
+
+<p>So, let’s get started!</p>
+
+<h2 id="the-why">The “WHY”?</h2>
+<p>In this section we understand “why” <strong>EfficientNet</strong>s are totally worth your time.</p>
+
+<p><code class="highlighter-rouge">fig-1</code> below summarizes “why” we could a learn a lot by understanding the <strong>EfficientNet</strong> Architecture.</p>
+
+<p><img src="/images/effnet_moment.png" alt="" title="fig-1 Model Size vs Imagenet Accuracy" /></p>
+
+<p>As we can see from <code class="highlighter-rouge">fig-1</code>, EfficientNets significantly outperform other ConvNets. In fact, <code class="highlighter-rouge">EfficientNet-B7</code> achieved new state of art with 84.4% top-1 accuracy outperforming the previous SOTA <a href="https://arxiv.org/abs/1811.06965">GPipe</a> but being <strong>8.4 times smaller</strong> and <strong>6.1 times faster</strong>.</p>
+
+<p>From the paper,</p>
+<blockquote>
+  <p>EfficientNet-B7 achieves state- of-the-art 84.4% top-1 / 97.1% top-5 accuracy on ImageNet, while being 8.4x smaller and 6.1x faster on inference than the best existing ConvNet. Our EfficientNets also transfer well and achieve state-of-the-art accuracy on CIFAR-100 (91.7%), Flowers (98.8%), and 3 other transfer learning datasets, with an order of magnitude fewer parameters.</p>
+</blockquote>
+
+<p>The great thing about <strong>EfficientNet</strong>s is that not only do they have better accuracies compared to their counterparts, they are also lightweight and thus, faster to run.</p>
+
+<p>Having looked at their superior accuracies and faster runtimes, let’s start to unravel the magic step-by-step.</p>
+
+<h2 id="the-how">The “HOW”?</h2>
+<p>So “how” did the authors <a href="https://scholar.google.com/citations?user=6POeyBoAAAAJ&amp;hl=en">Mingxing Tan</a> and <a href="https://scholar.google.com/citations?user=vfT6-XIAAAAJ&amp;hl=en">Quoc V. Le</a> make <strong>EfficientNet</strong>s perform so well and efficiently?</p>
+
+<p>In this section we will understand the main idea introduced in the research paper - <strong>Compound Scaling</strong>.</p>
+
+<h3 id="compound-scaling">Compound Scaling</h3>
+<p>Before the <strong>EfficientNet</strong>s came along, the most common way to scale up ConvNets was either by one of three dimensions - depth (number of layers), width (number of channels) or image resolution (image size).</p>
+
+<p><strong>EfficientNet</strong>s on the other hand perform <strong>Compound Scaling</strong> - that is, scale all three dimensions while mantaining a balance between all dimensions of the network.</p>
+
+<p>From the paper:</p>
+<blockquote>
+  <p>In this paper, we want to study and rethink the process of scaling up ConvNets. In particular, we investigate the central question: is there a principled method to scale up ConvNets that can achieve better accuracy and efficiency? Our empirical study shows that it is critical to balance all dimensions of network width/depth/resolution, and surprisingly such balance can be achieved by simply scaling each of them with constant ratio. Based on this observation, we propose a simple yet effective compound scaling method. Unlike conventional practice that arbitrary scales these factors, our method uniformly scales network width, depth, and resolution with a set of fixed scaling coefficients.</p>
+</blockquote>
+
+<p>This main difference between the scaling methods has also been illustrated in <code class="highlighter-rouge">fig-2</code> below.</p>
+
+<p><img src="/images/model_scaling.png" alt="" title="fig-2 Model Scaling" /></p>
+
+<p>In <code class="highlighter-rouge">fig-2</code> above, (b)-(d) are conventional scaling that only increases one dimension of network width, depth, or resolution. (e) is the proposed compound scaling method that uniformly scales all three dimensions with a fixed ratio.</p>
+
+<p>This main idea of <strong>Compound Scaling</strong> really set apart <strong>EfficientNet</strong>s from its predecessors. And intuitively, this idea of compound scaling makes sense too because if the input image is bigger (input resolution), then the network needs more layers (depth) and more channels (width) to capture more fine-grained patterns on the bigger image.</p>
+
+<p>In fact, this idea of <strong>Compound Scaling</strong> also works on existing <a href="https://arxiv.org/abs/1704.04861">MobileNet</a> and <a href="https://arxiv.org/abs/1512.03385">ResNet</a> architectures.</p>
+
+<p>From <code class="highlighter-rouge">table-1</code> below, we can clearly see, that the versions of <strong>MobileNet</strong> and <strong>ResNet</strong> architectures scaled using the <strong>Compound Scaling</strong> approach perform better than their baselines or also those architectures that were scaled using conventional methods - (b)-(d) in <code class="highlighter-rouge">fig-2</code>.</p>
+
+<p><img src="/images/effnet_t1.png" alt="" title="table-1 Compound Scaling" /></p>
+
+<p>Thus, it is safe to summarize - <strong>Compound Scaling</strong> works! But, we’re not done yet, there’s more magic to be unraveled.</p>
+
+<h3 id="nueral-architecture-search">Nueral Architecture Search</h3>
+<p>Since we are looking at the “<strong>how</strong>” - while so far we know <strong>Compound Scaling</strong> was the main idea introduced - the authors found that having a good baseline network is also critical.</p>
+
+<p>It wasn’t enough to achieve such great performance by picking up any existing architecture and applying <strong>Compound Scaling</strong> to it. While the authors evaluated the scaling method using existing ConvNets (for example - <strong>ResNet</strong>s and <strong>MobileNets</strong> in <code class="highlighter-rouge">table-1</code> before), in order to better demonstrate the effectiveness of this scaling method, they also developed a new mobile-size baseline, called <strong>EfficientNet</strong> using <strong>Nerual Architecture Search</strong>.</p>
+
+<p>We understand how they did this is in a lot more detail in a later section of this blog post.</p>
+
+<h3 id="main-contributions---cs--nas">Main Contributions - CS &amp; NAS</h3>
+<p>Therefore, to summarize the two main contributions of this research paper were the idea of <u>Compound Scaling</u> and using <u>Nueral Architecture Search to define a new mobile-size baseline called EfficientNet</u>. We look at both <strong>model scaling</strong> and the <strong>EfficientNet</strong> architecture in a lot more detail in the following sections.</p>
+
+<h2 id="comparing-conventional-methods-with-compound-scaling">Comparing Conventional Methods with Compound Scaling</h2>
+<p>In this section we look at various ways of scaling nueral networks in a lot more detail and compare then with the <strong>Compound Scaling</strong> approach.</p>
+
+<p>Basically, the authors of <strong>EfficientNet</strong> architecture ran a lot of experiments scaling depth, width and image resolution and made two main observations:</p>
+
+<blockquote>
+  <ol>
+    <li>Scaling up any dimension of network width, depth, or resolution improves accuracy, but the accuracy gain diminishes for bigger models.</li>
+    <li>In order to pursue better accuracy and efficiency, it is critical to balance all dimensions of network width, depth, and resolution during ConvNet scaling.</li>
+  </ol>
+</blockquote>
+
+<p><img src="/images/scaling_effnet.png" alt="" title="fig-3 Scaling up a Baseline Model with Different Network Width(w), Depth(d) and Resolution(r)" /></p>
+
+<p>These two observations can also be seen in <code class="highlighter-rouge">fig-3</code>. Now, let’s look at the effects of scaling single dimensions on a ConvNet in more detail below.</p>
+
+<h3 id="depth">Depth</h3>
+<p>Scaling network depth (number of layers), is the most common way used by many ConvNets.</p>
+
+<p>With the advancements in deep learning (particularly thanks to <a href="https://arxiv.org/abs/1512.03385">Residual Connections</a>, <a href="https://arxiv.org/abs/1502.03167">BatchNorm</a>), it has now been possible to train deeper nueral networks that generally have higher accuracy than their shallower counterparts. The intuition is that deeper ConvNet can capture richer and more complex features, and generalize well on new tasks. However, deeper networks are also more difficult to train due to the <a href="https://mc.ai/wide-residual-nets-why-deeper-isnt-always-better/">vanishing gradient problem</a>. Although residual connections and batchnorm help alleviate this problem, the accuracy gain of very deep networks diminishes. For example, ResNet-1000 has similar accuracy as ResNet-101 even though it has much more layers.</p>
+
+<p>In <code class="highlighter-rouge">fig-3</code> (middle), we can also see that <code class="highlighter-rouge">ImageNet</code> Top-1 Accuracy saturates at <code class="highlighter-rouge">d=6.0</code> and no further improvement can be seen after.</p>
+
+<h3 id="width">Width</h3>
+<p>Scaling network width - that is, increasing the number of channels in Convolution layers - is most commonly used for smaller sized models. We have seen applications of wider networks previously in <a href="https://arxiv.org/abs/1704.04861">MobileNets</a>, <a href="(https://arxiv.org/abs/1807.11626)">MNasNet</a>.</p>
+
+<p>While wider networks tend to be able to capture more fine-grained features and are easier to train, extremely wide but shallow networks tend to have difficul- ties in capturing higher level features.</p>
+
+<p>Also, as can be seen in <code class="highlighter-rouge">fig-3</code> (left), accuracy quickly saturates when networks become much wider with larger <code class="highlighter-rouge">w</code>.</p>
+
+<h3 id="resolution">Resolution</h3>
+<p>From the paper:</p>
+<blockquote>
+  <p>With higher resolution input images, ConvNets can potentially capture more fine-grained patterns. Starting from 224x224 in early ConvNets, modern ConvNets tend to use 299x299 (Szegedy et al., 2016) or 331x331 (Zoph et al., 2018) for better accuracy. Recently, GPipe (Huang et al., 2018) achieves state-of-the-art ImageNet accuracy with 480x480 resolution. Higher resolutions, such as 600x600, are also widely used in object detection ConvNets (He et al., 2017; Lin et al., 2017).</p>
+</blockquote>
+
+<p>Increasing image resolution to help improve the accuracy of ConvNets is not new - This has been termed as Progressive Resizing in fast.ai course. (explained <a href="https://www.kdnuggets.com/2019/05/boost-your-image-classification-model.html">here</a>).</p>
+
+<p>It is also beneficial to ensemble models trained on different input resolution as explained by Chris Deotte <a href="https://www.kaggle.com/c/siim-isic-melanoma-classification/discussion/160147">here</a>.</p>
+
+<p><code class="highlighter-rouge">fig-3</code> (right), we can see that accuracy increases with an increase in input image size.</p>
+
+<p>By studying the indivdiual effects of scaling depth, width and resolution, this brings us to the first observation which I post here again for reference:</p>
+
+<blockquote>
+  <p>Scaling up any dimension of network width, depth, or resolution improves accuracy, but the accuracy gain diminishes for bigger models.</p>
+</blockquote>
+
+<h3 id="compound-scaling-1">Compound Scaling</h3>
+
+<p><img src="/images/compound_scaling.png" alt="" title="fig-4 Scaling Network Width for Different Baseline Net- works" /></p>
+
+<p>Each dot in a line in <code class="highlighter-rouge">fig-4</code> above denotes a model with different width(w). We can see that the best accuracy gains can be obvserved by increasing depth, resolution and width. <code class="highlighter-rouge">r=1.0</code> represents 224x224 resolution whereas <code class="highlighter-rouge">r=1.3</code> represents 299x299 resolution.</p>
+
+<p>Therefore, with deeper (d=2.0) and higher resolution (r=2.0), width scaling achieves much better accuracy under the same FLOPS cost.</p>
+
+<p>This brings to the second observation:</p>
+
+<blockquote>
+  <p>In order to pursue better accuracy and efficiency, it is critical to balance all dimensions of network width, depth, and resolution during ConvNet scaling.</p>
+</blockquote>
+
+<p>Having looked at <strong>Compound Scaling</strong>, we will now look at how the authors used Nueral Architecture Search to get mobile-size network that they named <strong>EfficientNet</strong>.</p>
+
+<h2 id="the-efficientnet-architecture-using-nas">The EfficientNet Architecture using NAS</h2>
+
+<p>The authors used <strong>Nueral Architecture Search</strong> approach similar to <a href="https://arxiv.org/abs/1807.11626">MNasNet</a> research paper. This is a reinforcement learning based approach where the authors developed a baseline neural architecture <strong>Efficient-B0</strong> by leveraging a multi-objective search that optimizes for both <strong>Accuracy</strong> and <strong>FLOPS</strong>. From the paper:</p>
+
+<blockquote>
+  <p>Specifically, we use the same search space as (Tan et al., 2019), and use <strong>ACC(m)×[FLOPS(m)/T]<sup>w</sup></strong> as the optimization goal, where <code class="highlighter-rouge">ACC(m)</code> and <code class="highlighter-rouge">FLOPS(m)</code> denote the accuracy and FLOPS of model <code class="highlighter-rouge">m</code>, <code class="highlighter-rouge">T</code> is the target FLOPS and <code class="highlighter-rouge">w=-0.07</code> is a hyperparameter for controlling the trade-off between accuracy and FLOPS. Unlike (Tan et al., 2019; Cai et al., 2019), here we optimize FLOPS rather than latency since we are not targeting any specific hardware device.</p>
+</blockquote>
+
+<p>The EfficientNet-B0 architecture has been summarized in <code class="highlighter-rouge">table-2</code> below:</p>
+
+<p><img src="/images/effb0.png" alt="" title="Table-2 EfficientNet-B0 baseline network" /></p>
+
+<p>The <code class="highlighter-rouge">MBConv</code> layer above is nothing but an inverted bottleneck block with squeeze and excitation connection added to it. We will learn more about this layer in <a href="https://amaarora.github.io/2020/08/13/efficientnet.html#inverted-bottleneck-mbconv">this</a> section of the blog post.</p>
+
+<p>Starting from this baseline architecture, the authors scaled the <strong>EfficientNet-B0</strong> using <strong>Compound Scaling</strong> to obtain <strong>EfficientNet B1-B7</strong>.</p>
+
+<h3 id="mnasnet-approach">MnasNet Approach</h3>
+<p>Before we understand how was the <strong>EfficientNet-B0</strong> architecture developed, let’s first look into the <strong>MnasNet</strong> Architecture and the main idea behind the research paper.</p>
+
+<p><img src="/images/Mnasnet.png" alt="" title="fig-6 An overview of MNasNet Approach" /></p>
+
+<p>From the paper:</p>
+<blockquote>
+  <p>The search framework consists of three components: a recurrent neural network (RNN) based controller, a trainer to obtain the model accuracy, and a mobile phone based inference engine for measuring the latency.</p>
+</blockquote>
+
+<p>For <strong>MNasNet</strong>, the authors used model accuracy (on ImageNet) and latency as model objectives to find the best architecture.</p>
+
+<p>Essentially, the Controller finds a model architecture, this model architecture is then used to train on ImageNet, it’s accuracy and latency values are calculated. Then, reward function is calculated and feedback is sent back to controller. We repeat this process a few times until the optimum architecture is achieved such that it’s accuracy is maximum given latency is lower than certain specified value.</p>
+
+<p>The objective function can formally be defined as:</p>
+
+<p><img src="/images/mnasnet_obj.png" alt="" /></p>
+
+<p>Using the above as reward function, the authors were able to find the <strong>MNasNet</strong> architecture that achieved 75.2% top-1 accuracy and 78ms latency. More about this approach has been explained <a href="https://ai.googleblog.com/2018/08/mnasnet-towards-automating-design-of.html">here</a>.</p>
+
+<h3 id="nueral-architecture-search-for-efficientnets">Nueral Architecture Search for EfficientNets</h3>
+
+<p>The authors of the <strong>EfficientNet</strong> research paper used the similar approach as explained above to then find an optimal nueral network architecture that maximises <strong>ACC(m)×[FLOPS(m)/T]<sup>w</sup></strong>. 
+Note that for EfficientNets, the authors used FLOPS instead of latency in the objective function since the authors were not targeting specific hardware as opposed to <strong>MNasNet</strong> architecture.</p>
+
+<p>From the paper:</p>
+<blockquote>
+  <p>Our search produces an efficient network, which we name EfficientNet-B0. Since we use the same search space as (Tan et al., 2019), the architecture is similar to MnasNett, except our EfficientNet-B0 is slightly bigger due to the larger FLOPS target (our FLOPS target is 400M).</p>
+</blockquote>
+
+<p>The authors named this architecture as <strong>EfficientNet-B0</strong> and it is defined in <code class="highlighter-rouge">table-2</code> shown below again for reference:</p>
+
+<p><img src="/images/effb0.png" alt="" title="Table-2 EfficientNet-B0 baseline network" /></p>
+
+<p>Since, the authors of <strong>EfficientNet</strong>s used the same approach and similar nueral network search space as <strong>MNasNet</strong>, the two architectures are very similar.</p>
+
+<p>So, the key question now is - what’s this <strong>MBConv</strong> layer? As I have mentioned before, it is nothing but an inverted residual bottleneck.</p>
+
+<p>This has been explained further in the next section.</p>
+
+<h3 id="inverted-bottleneck-mbconv">Inverted Bottleneck MBConv</h3>
+
+<p><img src="/images/mbconv.png" alt="" title="fig-7 MBConv Layer" /></p>
+
+<p>As in the case of Bottleneck layers that were introduced in the <a href="https://arxiv.org/abs/1512.00567">InceptionV2</a> architecture, the key idea is to first use a <code class="highlighter-rouge">1x1</code> convolution to bring down the number of channels and apply the <code class="highlighter-rouge">3x3</code> or <code class="highlighter-rouge">5x5</code> convolution operation to the reduced number of channels to get output features. Finally, use another <code class="highlighter-rouge">1x1</code> convolution operation to again increase the number of channels to the initial value. Bottleneck design used in <strong>ResNet</strong>s has been shown below.</p>
+
+<p><img src="/images/bottleneck_design.png" alt="" title="fig-7 Bottleneck Design" /></p>
+
+<p>The inverted bottleneck as in <code class="highlighter-rouge">MBConv</code> does the reverse - instead of reducing the number of channels, the first <code class="highlighter-rouge">1x1</code> conv layer increases the number of channels to 3 times the initial.</p>
+
+<p>Note that using a standard convolution operation here would be computationally expensive, so a <strong>Depthwise Convolution</strong> is used to get the output feature map. Finally, the second <code class="highlighter-rouge">1x1</code> conv layer downsamples the number of channels to the initial value. This has been illustrated in <code class="highlighter-rouge">fig-7</code>.</p>
+
+<p>Now you might ask what’s a Depthwise Convolution? It has been explained very well <a href="https://www.youtube.com/watch?v=T7o3xvJLuHk">here</a>.</p>
+
+<p>So to summarize, the <strong>EfficientNet-B0</strong> architecture uses this inverted bottleneck with Depthwise Convolution operation. But, to this, they also add squeeze and excitation operation which have been explained in my previous blog post <a href="https://amaarora.github.io/2020/07/24/SeNet.html">here</a>.</p>
+
+<p>From the paper:</p>
+<blockquote>
+  <p>The main building block of EfficientNet-B0 is mobile inverted bottleneck MBConv (Sandler et al., 2018; Tan et al., 2019), to which we also add squeeze-and-excitation optimization (Hu et al., 2018).</p>
+</blockquote>
+
+<p>That’s all the magic - explained.</p>
+
+<h2 id="what-have-we-learnt-so-far">What have we learnt so far</h2>
+<p>Before looking at the code implementations, let’s summarize in simple words what we have learnt so far. First, we looked at the idea of compound scaling depth, width and image resolution all at the same time instead of the conventional method of scaling only one of the three. Next, we also looked at the various experiments and effects of scaling each dimension on model accuracy.</p>
+
+<p>We also realized that the baseline network to which compound scaling is applied also matters a lot to get best gains. The authors therefore, used Nueral Architecture Search to get a mobile-size network that’s very similar to MNasNet and they named it <strong>EfficientNet</strong>. Particularly, this baseline network is termed Efficient-B0.</p>
+
+<p>Next, the authors scaled this baseline network using compound scaling to scale depth, width and resolution to get Efficient B1-B7. This process has also been summarized in the image below.</p>
+
+<p><img src="/images/effnet_overall.jpg" alt="" title="fig-8 EfficientNet overall approach" /></p>

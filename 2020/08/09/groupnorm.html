@@ -1,0 +1,248 @@
+<h1 id="group-normalization">Group Normalization</h1>
+<ol id="markdown-toc">
+  <li><a href="#group-normalization" id="markdown-toc-group-normalization">Group Normalization</a>    <ol>
+      <li><a href="#introduction" id="markdown-toc-introduction">Introduction</a>        <ol>
+          <li><a href="#drawback-of-batch-normalization" id="markdown-toc-drawback-of-batch-normalization">Drawback of Batch Normalization</a></li>
+          <li><a href="#introduction-to-group-normalization" id="markdown-toc-introduction-to-group-normalization">Introduction to Group Normalization</a></li>
+        </ol>
+      </li>
+      <li><a href="#other-normalization-techniques" id="markdown-toc-other-normalization-techniques">Other Normalization Techniques</a>        <ol>
+          <li><a href="#group-normalization-in-detail-and-comparison-to-other-normalization-techniques" id="markdown-toc-group-normalization-in-detail-and-comparison-to-other-normalization-techniques">Group Normalization in detail and comparison to other normalization techniques</a></li>
+          <li><a href="#group-normalization-explained" id="markdown-toc-group-normalization-explained">Group Normalization Explained</a></li>
+          <li><a href="#benefits-of-group-normalization-over-other-techniques" id="markdown-toc-benefits-of-group-normalization-over-other-techniques">Benefits of Group Normalization over other techniques</a></li>
+        </ol>
+      </li>
+      <li><a href="#number-of-groups-hyperparameter-in-group-normalization" id="markdown-toc-number-of-groups-hyperparameter-in-group-normalization">Number of Groups hyperparameter in Group Normalization</a>        <ol>
+          <li><a href="#group-division-experiments-explained" id="markdown-toc-group-division-experiments-explained">Group Division Experiments Explained</a></li>
+        </ol>
+      </li>
+      <li><a href="#effect-of-group-normalization-on-deeper-models" id="markdown-toc-effect-of-group-normalization-on-deeper-models">Effect of Group Normalization on deeper models</a></li>
+      <li><a href="#implementation-of-groupnorm" id="markdown-toc-implementation-of-groupnorm">Implementation of GroupNorm</a></li>
+      <li><a href="#does-groupnorm-really-work-in-practice" id="markdown-toc-does-groupnorm-really-work-in-practice">Does GroupNorm really work in practice?</a></li>
+      <li><a href="#conclusion" id="markdown-toc-conclusion">Conclusion</a></li>
+      <li><a href="#references" id="markdown-toc-references">References</a></li>
+      <li><a href="#credits" id="markdown-toc-credits">Credits</a></li>
+    </ol>
+  </li>
+</ol>
+
+<h2 id="introduction">Introduction</h2>
+<p>In this blog post today, we will look at <a href="https://arxiv.org/abs/1803.08494">Group Normalization</a> research paper and also look at:</p>
+<ul>
+  <li>The drawback of <a href="https://arxiv.org/abs/1502.03167">Batch Normalization</a> for smaller batch sizes</li>
+  <li>Introduction to <a href="https://arxiv.org/abs/1803.08494">Group Normalization</a> as an alternative to <strong>BN</strong></li>
+  <li>Other normalization techniques available and how does <strong>Group Normalization</strong> compare to those</li>
+  <li>Benefits of <strong>Group Normalization</strong> over other normalization techniques</li>
+  <li>Discuss the optimal number of groups as a hyperparameter in <strong>GN</strong></li>
+  <li>Discuss effect of <strong>Group Normalization</strong> on deeper models (eg. Resnet-101)</li>
+  <li>Implement <strong>Group Normalization</strong> in <em>PyTorch</em> and <em>Tensorflow</em></li>
+  <li>Implement <strong>ResNet-50</strong> with [<strong>GroupNorm</strong> + <strong>Weight Standardization</strong>] on <strong>Pets</strong> dataset and compare performance to vanilla <strong>ResNet-50</strong> with <strong>BatchNorm</strong> layer</li>
+</ul>
+
+<p><a href="https://arxiv.org/abs/1502.03167">Batch Normalization</a> is used in most state-of-the art computer vision to stabilise training. <strong>BN</strong> normalizes the features based on the <em>mean</em> and <em>variance</em> in a mini-batch. This has helped improve model performance, reduce training time and also helped very deep models converge.</p>
+
+<p>But this technique also suffers from drawbacks - if batch size is too small, training becomes unstable with <strong>BN</strong>.</p>
+
+<p>The aim of this blog post is not to study <strong>BN</strong>, many other wonderful posts have been written on that, but to look at other alternatives such as <strong>GN</strong>.</p>
+
+<p>Through this blog post, I hope to introduce <strong>Group Normalization</strong> as an alternative to <strong>Batch Normalization</strong> and help the reader develop an intuition for cases where <strong>GN</strong> could perform better than <strong>BN</strong>.</p>
+
+<h3 id="drawback-of-batch-normalization">Drawback of Batch Normalization</h3>
+<p>Knowingly or unknowingly, we have all used <strong>BN</strong> in our experiments when training a deep learning network. If you have trained a <code class="highlighter-rouge">ResNet</code> model or pretty much any other CV model using <em>PyTorch</em> or <em>Tensorflow</em>, you have made use of <strong>BN</strong> to normalize the deep learning network.</p>
+
+<p>From the Group Normalization research paper,</p>
+<blockquote>
+  <p>We all know that BN has been established as a very effective component in deep learning. BN normalizes the features by the mean and variance computed within a batch. But despite its great success, BN exhibits drawbacks that are also caused by its distinct behavior of normalizing along the batch dimension. In particular, it is required for BN to work with sufficiently large batch size. A small batch size leads to innacurate estimation of the batch statistics and reducing BN’s batch size increases the model error dramatically.</p>
+</blockquote>
+
+<p>Essentially, what that means is that <strong>BN</strong> is not very effective if the batch sizes are too small. Especially for CV applications other than Image classification such as object detection, segmentation, video classification, the restriction on batch sizes are more demanding and it is difficult to have higher batch sizes.</p>
+
+<p>Especially in such cases, <strong>GN</strong> can be used a strong alternative to <strong>BN</strong>.</p>
+
+<p>Or, there could be cases where you might want to try a bigger capacity model leaving less space in the GPU to fit a bigger batch size. In such cases as well, you might want to try <strong>GN</strong> as an alternative.</p>
+
+<h3 id="introduction-to-group-normalization">Introduction to Group Normalization</h3>
+<p>In the <a href="https://arxiv.org/abs/1803.08494">paper</a>, the authors introduce <strong>GN</strong> as a simple alternative to <strong>BN</strong>. From the paper:</p>
+
+<blockquote>
+  <p>GN divides the channels into groups and computes within each group the mean and variance for normalization. GN’s computation is independent of batch sizes, and its accuracy is stable in a wide range of batch sizes.</p>
+</blockquote>
+
+<p>Essentially, <strong>GN</strong> takes away the dependance on batch size for normalization and in doing so mitigates the problem suffered by <strong>BN</strong>. There are also other techniques that have been proposed to avoid batch dimension - but we will discuss them later. For now, it is essential for the reader to realize that instead of normalizing accross the batch dimension, <strong>GN</strong> normalizes accross the groups (channel dimension). This has been further explained in depth later in this post <a href="https://amaarora.github.io/2020/08/09/groupnorm.html#group-normalization-explained">here</a>.</p>
+
+<p>First, let’s look at how <strong>GN</strong> compares to <strong>BN</strong> for training accross various batch sizes keeping all else same.</p>
+
+<p><img src="/images/BN_batch_size.png" alt="" title="fig-1 Imagenet classification error vs batch sizes" /></p>
+
+<p>As can be seen in the image above, because <strong>GN</strong> does not depend on the batch size, the validation classification error (when the deep learning model is normalized using <strong>GN</strong>) is stable accross various batch sizes compared to <strong>BN</strong>.</p>
+
+<p><img src="/images/GN_bs_2.png" alt="" title="fig-2 ResNet-50's validation eror trained with bs 32, 16, 8, 4 and 2" /></p>
+
+<p>The same trend as in <code class="highlighter-rouge">fig-1</code> can also be observed in <code class="highlighter-rouge">fig-2</code> where the validation error is consistent accross various batch sizes for <strong>GN</strong> as opposed to <strong>BN</strong>. Another key thing to note, the validation error for <strong>GN</strong> as reported in the research paper is very similar to that for <strong>BN</strong> - therefore, <strong>GN</strong> can be considered to be a strong alternative to <strong>BN</strong>.</p>
+
+<p>The validation errors (from the research paper) for various batch sizes are presented in <code class="highlighter-rouge">table-1</code> below:</p>
+
+<p><img src="/images/bs_sensitivity_gn.png" alt="" title="table-1 Sensitivity to batch sizes" /></p>
+
+<p>While <strong>BN</strong> performs slightly better than <strong>GN</strong> for batch size 32, <strong>GN</strong> performs better for all lower batch sizes.</p>
+
+<h2 id="other-normalization-techniques">Other Normalization Techniques</h2>
+<p><code class="highlighter-rouge">Group Normalization</code> isn’t the first technique that was proposed to overcome the drawback of <strong>BN</strong>. There are also several other techniques such as <a href="https://arxiv.org/abs/1607.06450">Layer Normalization</a>, <a href="https://arxiv.org/abs/1607.08022">Instance Normalization</a> and others mentioned in the references of this blog post.</p>
+
+<p>But, GN is the first technique to achieve comparable validation error rates as compared to <strong>BN</strong>.</p>
+
+<p>In this section we look at the most popular normalization tecniques namely - Layer Normalization (<strong>LN</strong>), Instance Normalization (<em>IN</em>), Batch Normalization (<strong>BN</strong>) and Group Normalization (<strong>GN</strong>).</p>
+
+<h3 id="group-normalization-in-detail-and-comparison-to-other-normalization-techniques">Group Normalization in detail and comparison to other normalization techniques</h3>
+
+<p><img src="/images/GN_BN_LN_IN.png" alt="" title="fig-3 Normalization methods" /></p>
+
+<p>The above image presented in the research paper is one of the best ways to compare the various normalization techniques and get an intuitive understanding for <strong>GN</strong>.</p>
+
+<p>Let’s consider that we have a batch of dimension <code class="highlighter-rouge">(N, C, H, W)</code> that needs to be normalized.</p>
+
+<p>Here,</p>
+<ul>
+  <li><code class="highlighter-rouge">N</code>: Batch Size</li>
+  <li><code class="highlighter-rouge">C</code>: Number of Channels</li>
+  <li><code class="highlighter-rouge">H</code>: Height of the feature map</li>
+  <li><code class="highlighter-rouge">W</code>: Width of the feature map</li>
+</ul>
+
+<p>Essentially, in <strong>BN</strong>, the pixels sharing the same channel index are normalized together. That is, for each channel, <strong>BN</strong> computes the <em>mean</em> and <em>std deviation</em> along the <code class="highlighter-rouge">(N, H, W)</code> axes. As we can see, the group statistics depend on <code class="highlighter-rouge">N</code>, the batch size.</p>
+
+<p>In <strong>LN</strong>, the <em>mean</em> and <em>std deviation</em> are computed for each sample along the <code class="highlighter-rouge">(C, H, W)</code> axes. Therefore, the calculations are independent of the batch size.</p>
+
+<p>In <strong>IN</strong>, the <em>mean</em> and <em>std deviation</em> are computed for each sample and each channel along the <code class="highlighter-rouge">(H, W)</code> axes. Again, the calculations are independent of batch size.</p>
+
+<h3 id="group-normalization-explained">Group Normalization Explained</h3>
+
+<p><img src="/images/gn_explained.jpg" alt="" title="fig-4 GN explained" /></p>
+
+<p>Finally, for group norm, the batch is first divided into groups (32 by default, discussed later). The batch with dimension <code class="highlighter-rouge">(N, C, W, H)</code> is first reshaped to <code class="highlighter-rouge">(N, G, C//G, H, W)</code> dimensions where <code class="highlighter-rouge">G</code> represents the <strong>number of groups</strong>. Finally, the <em>mean</em> and <em>std deviation</em> are calculated along the groups, that is <code class="highlighter-rouge">(H, W)</code> and along <code class="highlighter-rouge">C//G</code> channels. This is also illustrated very well in <code class="highlighter-rouge">fig-4</code>.</p>
+
+<p>One key thing to note here, if <code class="highlighter-rouge">C == G</code>, that is the number of groups are set to be equal to the number of channels (one channel per group), then <strong>GN</strong> becomes <strong>IN</strong>.</p>
+
+<p>And if, <code class="highlighter-rouge">G == 1</code>, that is number of groups is set to 1, <strong>GN</strong> becomes <strong>LN</strong>.</p>
+
+<p>I would like for the reader to take a minute here and make sure that he/she understands the differences between these normalization techniques mentioned above.</p>
+
+<h3 id="benefits-of-group-normalization-over-other-techniques">Benefits of Group Normalization over other techniques</h3>
+
+<p>Also, it is important to note that <strong>GN</strong> is less restricted than <strong>LN</strong>, because in <strong>LN</strong> it is assumed that all channels in a layer make “equal contributions” whereas <strong>GN</strong> is more flexible because in <strong>GN</strong>, each group of channels (instead of all of them) are assumed to have shared mean and variance - the model still has flexibility of learning a different distribution for each group.</p>
+
+<p>Also, <strong>GN</strong> is slightly better than <strong>IN</strong> because <strong>IN</strong> normalizes accross each sample for each channel, therefore, unlike <strong>GN</strong>, it misses the opportunity of exploiting the channel dependence.</p>
+
+<p><img src="/images/gn_comp.png" alt="" title="fig-5 Comparison of error curves" /></p>
+
+<p>Therefore, due to the reasons discussed above, we can see that the validation and training errors for <strong>GN</strong> are lower than those for <strong>LN</strong> and <strong>IN</strong>.</p>
+
+<h2 id="number-of-groups-hyperparameter-in-group-normalization">Number of Groups hyperparameter in Group Normalization</h2>
+<p>One key hyperparameter in <strong>Group Normalization</strong> is the number of groups to divide the channels into.</p>
+
+<p><img src="/images/group_division.png" alt="" title="table-2 Group division" /></p>
+
+<p>The authors of the research paper ran an experiment to train <code class="highlighter-rouge">ResNet-50</code> model on Imagenet dataset using various number of groups.</p>
+
+<p>As can be seen in <code class="highlighter-rouge">table-2</code>, setting number of groups to 32 achieves the lowest validation error.</p>
+
+<p>In the bottom part of <code class="highlighter-rouge">table-2</code>, the authors set a fixed number of channels per group. Essentially, since each layer in a deep learning model can have various number of channels, this means there are varying number of groups per layer. Setting 16 channels per group achieved the lowest score.</p>
+
+<h3 id="group-division-experiments-explained">Group Division Experiments Explained</h3>
+
+<p><img src="/images/VGG.png" alt="" title="fig-6 VGG" /></p>
+
+<p>Let’s understand what’s going on with help of VGGNet. As can be seen, there are varying number of channels in different layers of VGGNet (this is also the case for other deep learning models like ResNet, DenseNet etc). The authors essentially in the first experiment, divide each layer into 32 groups. Thus for layer 2 of VGGNet with 128 #channels, there are <code class="highlighter-rouge">128//32</code>, that is, 4 channels per group if group number is set to 32. The authors ran this experiments for varying number of groups and found for number of groups set to 32 to have the lowest validtion error.</p>
+
+<p>For the second experiment, the authors set the number of channels per group fixed. For example, if number of channels per group was set to 16, then the second layer with <code class="highlighter-rouge">128</code> channels had <code class="highlighter-rouge">128//16</code>, that is, 8 groups and the third layer with 256 channels had <code class="highlighter-rouge">256//16</code>, 16 groups and so on. The authors found setting 16 channels per group to have to have the lowest validation error.</p>
+
+<h2 id="effect-of-group-normalization-on-deeper-models">Effect of Group Normalization on deeper models</h2>
+<p>The authors also ran experiments and trained ResNet-101 architecture for batch size 32 and compared the validation errors with BN and GN implementation. The authors found the BN baseline to have 22.0% validation error and the GN counterpart to have 22.4% validation error. Also, for batch size 2, the authors found the GN error to be 23.0% which is still a very decent result considering the very small batch size.</p>
+
+<blockquote>
+  <p>Thus, I think from the results of this experiment, it is safe to say that GN with smaller batch sizes also works for larger models.</p>
+</blockquote>
+
+<h2 id="implementation-of-groupnorm">Implementation of GroupNorm</h2>
+<p>Finally, we are now ready to look at the implementation of <strong>GN</strong>.</p>
+
+<p>The following snippet of code has been provided in the research paper:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">GroupNorm</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">gamma</span><span class="p">,</span> <span class="n">beta</span><span class="p">,</span> <span class="n">G</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mi">1</span><span class="n">e</span><span class="err">−</span><span class="mi">5</span><span class="p">):</span> 
+    <span class="c1"># x: input features with shape [N,C,H,W] 
+</span>    <span class="c1"># gamma, beta: scale and offset, with shape [1,C,1,1] 
+</span>    <span class="c1"># G: number of groups for GN
+</span>    <span class="n">N</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">W</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span> 
+    <span class="n">x</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="p">[</span><span class="n">N</span><span class="p">,</span> <span class="n">G</span><span class="p">,</span> <span class="n">C</span> <span class="o">//</span> <span class="n">G</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">W</span><span class="p">])</span>
+    <span class="n">mean</span><span class="p">,</span> <span class="n">var</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">moments</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">],</span> <span class="n">keep</span> <span class="n">dims</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span> 
+    <span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="err">−</span> <span class="n">mean</span><span class="p">)</span> <span class="o">/</span> <span class="n">tf</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">var</span> <span class="o">+</span> <span class="n">eps</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="p">[</span><span class="n">N</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">W</span><span class="p">])</span> 
+    <span class="k">return</span> <span class="n">x</span> <span class="err">∗</span> <span class="n">gamma</span> <span class="o">+</span> <span class="n">beta</span>
+</code></pre></div></div>
+<p>Essentially, the authors reshape the batch and divide into groups with <code class="highlighter-rouge">C // G</code> channels per group where,</p>
+<ul>
+  <li><code class="highlighter-rouge">C</code>: number of channels</li>
+  <li><code class="highlighter-rouge">G</code>: number of groups</li>
+</ul>
+
+<p>Finally, as discussed in <a href="https://amaarora.github.io/2020/08/09/groupnorm.html#group-normalization-explained">this</a> section, the authors normalize along the <code class="highlighter-rouge">(C//G, H, W)</code> dimension and return the result after reshaping the batch back to <code class="highlighter-rouge">(N, C, H, W)</code>.</p>
+
+<p>I hope that by this time, the implementation should be clear to the reader. If it isn’t, either I have not explained <strong>GN</strong> very well, or I kindly ask the reader to go back to <a href="https://amaarora.github.io/2020/08/09/groupnorm.html#group-normalization-explained">Group Normalization Explained</a> section and have a quick re-read.</p>
+
+<p>Finally, we could rewrite <strong>GN</strong> in <code class="highlighter-rouge">PyTorch</code> like so:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="n">nn</span>
+
+<span class="k">class</span> <span class="nc">GroupNorm</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_features</span><span class="p">,</span> <span class="n">num_groups</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">GroupNorm</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">num_features</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">beta</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">num_features</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_groups</span> <span class="o">=</span> <span class="n">num_groups</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eps</span> <span class="o">=</span> <span class="n">eps</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">N</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">W</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">()</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_groups</span> <span class="p">,</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">mean</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">var</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="c1"># normalize
+</span>        <span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span><span class="o">-</span><span class="n">mean</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">var</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">eps</span><span class="p">)</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">N</span><span class="p">,</span><span class="n">C</span><span class="p">,</span><span class="n">H</span><span class="p">,</span><span class="n">W</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">beta</span>
+</code></pre></div></div>
+
+<p><code class="highlighter-rouge">PyTorch</code> also inherently supports <code class="highlighter-rouge">GroupNorm</code> and can be used by using <code class="highlighter-rouge">nn.GroupNorm</code>.</p>
+
+<p>Having implemented <strong>GN</strong> in PyTorch and Tensorflow, we are now ready to run our own experiments and see the results for ourselves in the next section.</p>
+
+<h2 id="does-groupnorm-really-work-in-practice">Does GroupNorm really work in practice?</h2>
+<p>Personally, I wanted to try a little experiment of my own to compare <strong>GN</strong> with <strong>BN</strong> and corroborate the findings in the <strong>GN</strong> research paper.</p>
+
+<p>You can find the experiment in this notebook <a href="https://nbviewer.jupyter.org/github/amaarora/amaarora.github.io/blob/master/nbs/Group%20Normalization.ipynb">here</a>.</p>
+
+<p>Basically, in the experiment, I trained two <code class="highlighter-rouge">ResNet-34</code> architectures on the <code class="highlighter-rouge">Pets</code> dataset - one with <strong>BN</strong> and other with <strong>GN</strong>. To my surprise, I found that simply replacing <code class="highlighter-rouge">BatchNorm</code> with <code class="highlighter-rouge">GroupNorm</code> led to sub-optimal results and the model with <code class="highlighter-rouge">GroupNorm</code> used as the normalization layer performed much worse than the model normalized with <code class="highlighter-rouge">BatchNorm</code> layer even for a very small batch size of 4. This was very different to the results reported in fig-1.</p>
+
+<p>Thanks to <a href="https://twitter.com/DragonPG2000">Sunil Kumar</a> who pointed me to <a href="https://arxiv.org/abs/1912.11370">Big Transfer (BiT): General Visual Representation Learning</a> research paper where I noticed that the researchers used a combination of <a href="https://arxiv.org/abs/1903.10520">Weight Standardization</a> and <strong>GN</strong> to achieve SOTA results. So I tried this out with the implementation of Weight Standardization as in the official repository <a href="https://github.com/joe-siyuan-qiao/WeightStandardization">here</a> and very quickly I was able to replicate the results with <code class="highlighter-rouge">GN + WS</code> performing significantly better than <code class="highlighter-rouge">BN</code> for batch size of 1 <a href="https://nbviewer.jupyter.org/github/amaarora/amaarora.github.io/blob/master/nbs/Group%20Normalization%20WS.ipynb">here</a>.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+<p>I hope that I have been clear in my explaination of Group Normalization, and also through my experiments, I have been able to provide a way for you to implement <strong>GN</strong> in PyTorch and Tensorflow and run experiments of your own.</p>
+
+<p>As always, constructive feedback is always welcome at <a href="https://twitter.com/amaarora">@amaarora</a>.</p>
+
+<p>Also, feel free to <a href="https://amaarora.github.io/subscribe">subscribe to my blog here</a> to receive regular updates regarding new blog posts. Thanks for reading!</p>
+
+<h2 id="references">References</h2>
+<ol>
+  <li><a href="https://arxiv.org/abs/1803.08494">Group Normalization</a> by He et al</li>
+  <li><a href="https://arxiv.org/abs/1502.03167">Batch Normalization</a> by Ioffe et al</li>
+  <li><a href="https://arxiv.org/abs/1607.08022">Instance Normalization: The Missing Ingredient for Fast Stylization</a></li>
+  <li><a href="https://arxiv.org/abs/1607.06450">Layer Normalization</a></li>
+  <li><a href="https://arxiv.org/abs/1903.10520">Weight Standardization</a></li>
+  <li>Implementation of Weight Standardization from the <a href="https://github.com/joe-siyuan-qiao/WeightStandardization">official repository</a></li>
+  <li><a href="https://arxiv.org/abs/1512.03385">Deep Residual Learning for Image Recognition</a></li>
+</ol>
+
+<h2 id="credits">Credits</h2>
+<p>Thanks to <a href="https://twitter.com/AryMob">@AryMob</a> for pointing out errata in this post.</p>

@@ -1,0 +1,366 @@
+<h1 id="densenet-architecture-explained-with-pytorch-implementation-from-torchvision">DenseNet Architecture Explained with PyTorch Implementation from TorchVision</h1>
+
+<ol id="markdown-toc">
+  <li><a href="#densenet-architecture-explained-with-pytorch-implementation-from-torchvision" id="markdown-toc-densenet-architecture-explained-with-pytorch-implementation-from-torchvision">DenseNet Architecture Explained with PyTorch Implementation from TorchVision</a>    <ol>
+      <li><a href="#introduction" id="markdown-toc-introduction">Introduction</a></li>
+      <li><a href="#densenet-architecture-introduction" id="markdown-toc-densenet-architecture-introduction">DenseNet Architecture Introduction</a></li>
+      <li><a href="#but-is-feature-concatenation-possible" id="markdown-toc-but-is-feature-concatenation-possible">But is feature concatenation possible?</a>        <ol>
+          <li><a href="#transition-layers" id="markdown-toc-transition-layers">Transition Layers</a></li>
+        </ol>
+      </li>
+      <li><a href="#dense-connectivity" id="markdown-toc-dense-connectivity">Dense connectivity</a>        <ol>
+          <li><a href="#inside-a-single-denseblock" id="markdown-toc-inside-a-single-denseblock">Inside a single DenseBlock</a></li>
+        </ol>
+      </li>
+      <li><a href="#densenet-architecture-as-a-collection-of-denseblocks" id="markdown-toc-densenet-architecture-as-a-collection-of-denseblocks">DenseNet Architecture as a collection of DenseBlocks</a>        <ol>
+          <li><a href="#bottleneck-layers" id="markdown-toc-bottleneck-layers">Bottleneck Layers</a></li>
+        </ol>
+      </li>
+      <li><a href="#densenet-implementation" id="markdown-toc-densenet-implementation">DenseNet Implementation</a>        <ol>
+          <li><a href="#denselayer-implementation" id="markdown-toc-denselayer-implementation">DenseLayer Implementation</a></li>
+          <li><a href="#denseblock-implementation" id="markdown-toc-denseblock-implementation">DenseBlock Implementation</a></li>
+        </ol>
+      </li>
+      <li><a href="#densenet-architecture-implementation" id="markdown-toc-densenet-architecture-implementation">DenseNet Architecture Implementation</a></li>
+      <li><a href="#conclusion" id="markdown-toc-conclusion">Conclusion</a></li>
+      <li><a href="#credits" id="markdown-toc-credits">Credits</a></li>
+    </ol>
+  </li>
+</ol>
+
+<h2 id="introduction">Introduction</h2>
+<p>In this post today, we will be looking at <strong>DenseNet</strong> architecture from the research paper <a href="https://arxiv.org/abs/1608.06993">Densely Connected Convolutional Networks</a>.</p>
+
+<p>The overall agenda is to:</p>
+<ul>
+  <li>Understand what DenseNet architecture is</li>
+  <li>Introduce dense blocks, transition layers and look at a single dense block in more detail</li>
+  <li>Understand step-by-step the TorchVision implementation of DenseNet</li>
+</ul>
+
+<h2 id="densenet-architecture-introduction">DenseNet Architecture Introduction</h2>
+
+<p>In a standard <strong>Convolutional Neural Network</strong>, we have an input image, that is then passed through the network to get an output predicted label in a way where the forward pass is pretty straightforward as shown in the image below:</p>
+
+<p><img src="/images/CNN.png" alt="" title="fig-1 Convolutional Neural Network; src: https://cezannec.github.io/Convolutional_Neural_Networks/" /></p>
+
+<p>Each convolutional layer except the first one (which takes in the input image), takes in the output of the previous convolutional layer and produces an output feature map that is then passed to next convolutional layer. For <code class="highlighter-rouge">L</code> layers, there are <code class="highlighter-rouge">L</code> direct connections - one between each layer and its subsequent layer.</p>
+
+<p>The <strong>DenseNet</strong> architecture is all about modifying this standard CNN architecture like so:</p>
+
+<p><img src="/images/densenet.png" alt="" title="fig-2 DenseNet Architecture" /></p>
+
+<p>In a <strong>DenseNet</strong> architecture, each layer is connected to every other layer, hence the name <strong>Densely Connected Convolutional Network</strong>. For <code class="highlighter-rouge">L</code> layers, there are <code class="highlighter-rouge">L(L+1)/2</code> direct connections. For each layer, the feature maps of all the preceding layers are used as inputs, and its own feature maps are used as input for each subsequent layers.</p>
+
+<p>This is really it, as simple as this may sound, DenseNets essentially conect every layer to every other layer. This is the main idea that is extremely powerful. The input of a layer inside <strong>DenseNet</strong> is the concatenation of feature maps from previous layers.</p>
+
+<p>From the paper:</p>
+<blockquote>
+  <p>DenseNets have several compelling advantages: they alleviate the vanishing-gradient problem, strengthen feature propagation, encourage feature reuse, and substantially reduce the number of parameters.</p>
+</blockquote>
+
+<h2 id="but-is-feature-concatenation-possible">But is feature concatenation possible?</h2>
+<p>Okay, so then, now we know the input of <strong>L<sub>th</sub></strong> layer are the feature maps from [<strong>L<sub>1</sub></strong>, <strong>L<sub>1</sub></strong>, <strong>L<sub>1</sub></strong>.. <strong>L-1<sub>th</sub></strong>] concatenated but is this concatenation possible?</p>
+
+<p>At this point in time, I want you to think about whether we can concat the features from the first layer of a <strong>DenseNet</strong> with the last layer of the <strong>DenseNet</strong>? If we can, why? If we can’t, what do we need to do to make this possible?</p>
+
+<p>This is a good time to take a minute and think about this question.</p>
+
+<p>So, here’s what I think - it would not be possible to concatenate the feature maps if the size of feature maps is different. So, to be able to perform the concatenation operation, we need to make sure that the size of the feature maps that we are concatenating is the same. Right?</p>
+
+<p>But we can’t just keep the feature maps the same size throughout the network - <strong>an essential part of concvolutional networks is down-sampling layers that change the size of feature maps</strong>. For example, look at the VGG architecture below:</p>
+
+<p><img src="/images/imagenet_vgg16.png" alt="" title="fig-3 VGG architecture" /></p>
+
+<p>The input of shape <em>224x224x3</em> is downsampled to <em>7x7x512</em> towards the end of the network.</p>
+
+<p>To facilitate both down-sampling in the architecture and feature concatenation - the authors divided the network into multiple densely connected dense blocks. Inside the dense blocks, the feature map size remains the same.</p>
+
+<p><img src="/images/denseblock.png" alt="" title="fig-4 A DenseNet Architecture with 3 dense blocks" /></p>
+
+<p>Dividing the network into densely connected blocks solves the problem that we discussed above.</p>
+
+<p>Now, the <code class="highlighter-rouge">Convolution + Pooling</code> operations outside the dense blocks can perform the downsampling operation and inside the dense block we can make sure that the size of the feature maps is the same to be able to perform feature concatenation.</p>
+
+<h3 id="transition-layers">Transition Layers</h3>
+<p>The authors refer to the layers between the dense blocks as <strong>transition layers</strong> which do the convolution and pooling.</p>
+
+<p>From the paper, we know that the <strong>transition layers</strong> used in the <strong>DenseNet</strong> architecture consist of a batch-norm layer, 1x1 convolution followed by a 2x2 average pooling layer.</p>
+
+<p>Given that the transition layers are pretty easy, let’s quickly implement them here:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">_Transition</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_input_features</span><span class="p">,</span> <span class="n">num_output_features</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">_Transition</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'norm'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">BatchNorm2d</span><span class="p">(</span><span class="n">num_input_features</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'relu'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(</span><span class="n">inplace</span><span class="o">=</span><span class="bp">True</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'conv'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="n">num_input_features</span><span class="p">,</span> <span class="n">num_output_features</span><span class="p">,</span>
+                                          <span class="n">kernel_size</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">stride</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="bp">False</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'pool'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">AvgPool2d</span><span class="p">(</span><span class="n">kernel_size</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">stride</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+</code></pre></div></div>
+
+<p>Essentially the <code class="highlighter-rouge">1x1 conv</code> performs the downsampling from <code class="highlighter-rouge">num_input_features</code> to <code class="highlighter-rouge">num_output_features</code>.</p>
+
+<h2 id="dense-connectivity">Dense connectivity</h2>
+<p>Let’s consider a network with <code class="highlighter-rouge">L</code> layers, each of which performs a non-linear transformation <strong>H<sub>L</sub></strong>. The output of the <strong>L<sub>th</sub></strong> layer of the network is denoted as <strong>x<sub>L</sub></strong> and the input image is represented as <strong>x<sub>0</sub></strong>.</p>
+
+<p>We know that traditional feed-forward netowrks connect the output of the <strong>L<sub>th</sub></strong> layer to <strong>L+1<sub>th</sub></strong> layer. And the skip connection can be represented as:</p>
+
+<p><img src="/images/resnet_out.png" alt="" title="eq-1 ResNet architecture output" /></p>
+
+<p>In <strong>DenseNet</strong> architecture, the dense connectivity can be represented as:</p>
+
+<p><img src="/images/densenet_out.png" alt="" title="eq-2 DenseNet architecture output" /></p>
+
+<p>where [x<sub>0</sub>, x<sub>1</sub>, x<sub>2</sub>..] represents concatenation of the feature maps produced by [0,1,.. L<sub>th</sub>] layers.</p>
+
+<h3 id="inside-a-single-denseblock">Inside a single DenseBlock</h3>
+<p>Now that we understand that a <strong>DenseNet</strong> architecture is divided into multiple dense blocks, let’s look at a single dense block in a little more detail. Essentially, we know, that inside a dense block, each layer is connected to every other layer and the feature map size remains the same.</p>
+
+<p><img src="/images/denseblock_single.jpeg" alt="" title="fig-5 A view inside the dense block" /></p>
+
+<p>Let’s try and understand what’s really going on inside a <strong>dense block</strong>. We have some <span style="color:gray"><strong>gray</strong></span> input features that are then passed to <code class="highlighter-rouge">LAYER_0</code>. The <code class="highlighter-rouge">LAYER_0</code> performs a non-linear transformation to add <span style="color:purple"><strong>purple</strong></span> features to the <span style="color:gray"><strong>gray</strong></span> features. These are then used as input to <code class="highlighter-rouge">LAYER_1</code> which performs a non-linear transformation to also add <span style="color:orange"><strong>orange</strong></span> features to the <span style="color:gray"><strong>gray</strong></span> and <span style="color:purple"><strong>purple</strong></span> ones. And so on until the final output for this 3 layer denseblock is a concatenation of <span style="color:gray"><strong>gray</strong></span>, <span style="color:purple"><strong>purple</strong></span>, <span style="color:orange"><strong>orange</strong></span> and <span style="color:green"><strong>green</strong></span> features.</p>
+
+<p>So, in a dense block, each layer adds some features on top of the existing feature maps.</p>
+
+<p>Therefore, as you can see the size of the feature map grows after a pass through each dense layer and the new features are concatenated to the existing features. One can think of the features as a global state of the network and each layer adds <code class="highlighter-rouge">K</code> features on top to the global state.</p>
+
+<p>This parameter <code class="highlighter-rouge">K</code> is referred to as <strong>growth rate</strong> of the network.</p>
+
+<h2 id="densenet-architecture-as-a-collection-of-denseblocks">DenseNet Architecture as a collection of DenseBlocks</h2>
+
+<p>We already know by now from fig-4, that DenseNets are divided into multiple DenseBlocks.</p>
+
+<p>The various architectures of DenseNets have been summarized in the paper.</p>
+
+<p><img src="/images/densenet_archs.png" alt="" title="table-1 DenseNet Architectures" /></p>
+
+<p>Each architecture consists of four DenseBlocks with varying number of layers. For example, the <code class="highlighter-rouge">DenseNet-121</code> has <code class="highlighter-rouge">[6,12,24,16]</code> layers in the four dense blocks whereas <code class="highlighter-rouge">DenseNet-169</code> has <code class="highlighter-rouge">[6, 12, 32, 32]</code> layers.</p>
+
+<p>We can see that the first part of the DenseNet architecture consists of a <code class="highlighter-rouge">7x7 stride 2 Conv Layer</code> followed by a <code class="highlighter-rouge">3x3 stride-2 MaxPooling layer</code>. And the fourth dense block is followed by a <strong>Classification Layer</strong> that accepts the feature maps of all layers of the network to perform the classification.</p>
+
+<p>Also, the convolution operations inside each of the architectures are the Bottle Neck layers. What this means is that the <code class="highlighter-rouge">1x1 conv</code> reduces the number of channels in the input and <code class="highlighter-rouge">3x3 conv</code> performs the convolution operation on the transformed version of the input with reduced number of channels rather than the input.</p>
+
+<h3 id="bottleneck-layers">Bottleneck Layers</h3>
+<p>By now, we know that each layer produces <code class="highlighter-rouge">K</code> feature maps which are then concatenated to previous feature maps. Therefore, the number of inputs are quite high especially for later layers in the network.</p>
+
+<p>This has huge computational requirements and to make it more efficient, the authors decided to utilize Bottleneck layers. From the paper:</p>
+<blockquote>
+  <p>1×1 convolution can be introduced as bottleneck layer before each 3×3 convolution to reduce the number of input feature-maps, and thus to improve computational efficiency. In our experiments, we let each 1×1 convolution produce <strong>4k</strong> feature-maps.</p>
+</blockquote>
+
+<p>We know <code class="highlighter-rouge">K</code> refers to the growth rate, so what the authors have finalized on is for <code class="highlighter-rouge">1x1 conv</code> to first produce <code class="highlighter-rouge">4*K</code> feature maps and then perform <code class="highlighter-rouge">3x3 conv</code> on these <code class="highlighter-rouge">4*k</code> size feature maps.</p>
+
+<h2 id="densenet-implementation">DenseNet Implementation</h2>
+<p>We are now ready and have all the building blocks to implement DenseNet in PyTorch.</p>
+
+<h3 id="denselayer-implementation">DenseLayer Implementation</h3>
+<p>The first thing we need is to implement the dense layer inside a dense block.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">_DenseLayer</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_input_features</span><span class="p">,</span> <span class="n">growth_rate</span><span class="p">,</span> <span class="n">bn_size</span><span class="p">,</span> <span class="n">drop_rate</span><span class="p">,</span> <span class="n">memory_efficient</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">_DenseLayer</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'norm1'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">BatchNorm2d</span><span class="p">(</span><span class="n">num_input_features</span><span class="p">)),</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'relu1'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(</span><span class="n">inplace</span><span class="o">=</span><span class="bp">True</span><span class="p">)),</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'conv1'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="n">num_input_features</span><span class="p">,</span> <span class="n">bn_size</span> <span class="o">*</span>
+                                           <span class="n">growth_rate</span><span class="p">,</span> <span class="n">kernel_size</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">stride</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                                           <span class="n">bias</span><span class="o">=</span><span class="bp">False</span><span class="p">)),</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'norm2'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">BatchNorm2d</span><span class="p">(</span><span class="n">bn_size</span> <span class="o">*</span> <span class="n">growth_rate</span><span class="p">)),</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'relu2'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(</span><span class="n">inplace</span><span class="o">=</span><span class="bp">True</span><span class="p">)),</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'conv2'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="n">bn_size</span> <span class="o">*</span> <span class="n">growth_rate</span><span class="p">,</span> <span class="n">growth_rate</span><span class="p">,</span>
+                                           <span class="n">kernel_size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">stride</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">padding</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                                           <span class="n">bias</span><span class="o">=</span><span class="bp">False</span><span class="p">)),</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">drop_rate</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">drop_rate</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">memory_efficient</span> <span class="o">=</span> <span class="n">memory_efficient</span>
+
+    <span class="k">def</span> <span class="nf">bn_function</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>
+        <span class="s">"Bottleneck function"</span>
+        <span class="c1"># type: (List[Tensor]) -&gt; Tensor
+</span>        <span class="n">concated_features</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">bottleneck_output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conv1</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">relu1</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">norm1</span><span class="p">(</span><span class="n">concated_features</span><span class="p">)))</span>  <span class="c1"># noqa: T484
+</span>        <span class="k">return</span> <span class="n">bottleneck_output</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">input</span><span class="p">):</span>  <span class="c1"># noqa: F811
+</span>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">):</span>
+            <span class="n">prev_features</span> <span class="o">=</span> <span class="p">[</span><span class="nb">input</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">prev_features</span> <span class="o">=</span> <span class="nb">input</span>
+
+        <span class="n">bottleneck_output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bn_function</span><span class="p">(</span><span class="n">prev_features</span><span class="p">)</span>
+        <span class="n">new_features</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conv2</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">relu2</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">norm2</span><span class="p">(</span><span class="n">bottleneck_output</span><span class="p">)))</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">drop_rate</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">new_features</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">dropout</span><span class="p">(</span><span class="n">new_features</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">drop_rate</span><span class="p">,</span>
+                                     <span class="n">training</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">training</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">new_features</span>
+</code></pre></div></div>
+
+<p>A <code class="highlighter-rouge">DenseLayer</code> accepts an input, concatenates the input together and performs <code class="highlighter-rouge">bn_function</code> on these feature maps to get <code class="highlighter-rouge">bottleneck_output</code>. This is done for computational efficiency. Finally, the convolution operation is performed to get <code class="highlighter-rouge">new_features</code> which are of size <code class="highlighter-rouge">K</code> or <code class="highlighter-rouge">growth_rate</code>.</p>
+
+<p>It should now be easy to map the above implementation with fig-5 shown below for reference again:</p>
+
+<p><img src="/images/denseblock_single.jpeg" alt="" title="fig-5 A view inside the dense block" /></p>
+
+<p>Let’s say the above is an implementation of <code class="highlighter-rouge">LAYER_2</code>. First, <code class="highlighter-rouge">LAYER_2</code> accepts the <span style="color:gray"><strong>gray</strong></span>, <span style="color:purple"><strong>purple</strong></span>, <span style="color:orange"><strong>orange</strong></span> feature maps and concatenates them. 
+Next, the <code class="highlighter-rouge">LAYER_2</code> performs a bottleneck operation to create <code class="highlighter-rouge">bottleneck_output</code> for computational efficiency. Finally, the layer performs the <strong>H<sub>L</sub></strong> operation as in eq-2 to generate <code class="highlighter-rouge">new_features</code>. These <code class="highlighter-rouge">new_features</code> are the <span style="color:green"><strong>green</strong></span> features as in fig-5.</p>
+
+<p>Great! So far we have successfully implemented Transition and Dense layers.</p>
+
+<h3 id="denseblock-implementation">DenseBlock Implementation</h3>
+<p>Now, we are ready to implement the DenseBlock which consists of multiple such <code class="highlighter-rouge">DenseLayer</code>s.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">_DenseBlock</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">ModuleDict</span><span class="p">):</span>
+    <span class="n">_version</span> <span class="o">=</span> <span class="mi">2</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_layers</span><span class="p">,</span> <span class="n">num_input_features</span><span class="p">,</span> <span class="n">bn_size</span><span class="p">,</span> <span class="n">growth_rate</span><span class="p">,</span> <span class="n">drop_rate</span><span class="p">,</span> <span class="n">memory_efficient</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">_DenseBlock</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_layers</span><span class="p">):</span>
+            <span class="n">layer</span> <span class="o">=</span> <span class="n">_DenseLayer</span><span class="p">(</span>
+                <span class="n">num_input_features</span> <span class="o">+</span> <span class="n">i</span> <span class="o">*</span> <span class="n">growth_rate</span><span class="p">,</span>
+                <span class="n">growth_rate</span><span class="o">=</span><span class="n">growth_rate</span><span class="p">,</span>
+                <span class="n">bn_size</span><span class="o">=</span><span class="n">bn_size</span><span class="p">,</span>
+                <span class="n">drop_rate</span><span class="o">=</span><span class="n">drop_rate</span><span class="p">,</span>
+                <span class="n">memory_efficient</span><span class="o">=</span><span class="n">memory_efficient</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'denselayer</span><span class="si">%</span><span class="s">d'</span> <span class="o">%</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="n">layer</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">init_features</span><span class="p">):</span>
+        <span class="n">features</span> <span class="o">=</span> <span class="p">[</span><span class="n">init_features</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">new_features</span> <span class="o">=</span> <span class="n">layer</span><span class="p">(</span><span class="n">features</span><span class="p">)</span>
+            <span class="n">features</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_features</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span><span class="n">features</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>Let’s map the implementation of this <code class="highlighter-rouge">DenseBlock</code> with fig-5 again. Let’s say we pass the number of layers <code class="highlighter-rouge">num_layers</code> as <em>3</em> to create fig-5 block. In this case, let’s imagine that the <code class="highlighter-rouge">num_input_features</code> in <span style="color:gray"><strong>gray</strong></span> in the figure is <em>64</em>. We already know that the authors choose the bottleneck size <code class="highlighter-rouge">bn_size</code> for <code class="highlighter-rouge">1x1 conv</code> to be <em>4</em>. Let’s consider the <code class="highlighter-rouge">growth_rate</code> is 32 (same for all networks as in the paper).</p>
+
+<p>Great, so the first layer <code class="highlighter-rouge">LAYER_0</code> accepts <em>64</em> <code class="highlighter-rouge">num_input_features</code> and outputs extra <em>32</em> features. Excellent. Now, <code class="highlighter-rouge">LAYER_1</code> accepts the <em>96</em> features <code class="highlighter-rouge">num_input_features + 1 * growth rate</code> and outputs extra <em>32</em> features again. Finally, <code class="highlighter-rouge">LAYER_2</code> accepts <em>128</em> features <code class="highlighter-rouge">num_input_features + 2 * growth rate</code> and adds the <em>32</em> <span style="color:green"><strong>green</strong></span> features on top with are then concatenated to existing features and returned by the <code class="highlighter-rouge">DenseBlock</code>.</p>
+
+<p>At this stage, it should be really easy for you to map the implementation of dense block with fig-5.</p>
+
+<h2 id="densenet-architecture-implementation">DenseNet Architecture Implementation</h2>
+
+<p>Finally, we are now ready to implement the DenseNet architecture as we have already implemented the <code class="highlighter-rouge">DenseLayer</code> and <code class="highlighter-rouge">DenseBlock</code>.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">DenseNet</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">growth_rate</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">block_config</span><span class="o">=</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">16</span><span class="p">),</span>
+                 <span class="n">num_init_features</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">bn_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">drop_rate</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">num_classes</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">memory_efficient</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+
+        <span class="nb">super</span><span class="p">(</span><span class="n">DenseNet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+
+        <span class="c1"># Convolution and pooling part from table-1
+</span>        <span class="bp">self</span><span class="o">.</span><span class="n">features</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">OrderedDict</span><span class="p">([</span>
+            <span class="p">(</span><span class="s">'conv0'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">num_init_features</span><span class="p">,</span> <span class="n">kernel_size</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span> <span class="n">stride</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                                <span class="n">padding</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="bp">False</span><span class="p">)),</span>
+            <span class="p">(</span><span class="s">'norm0'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">BatchNorm2d</span><span class="p">(</span><span class="n">num_init_features</span><span class="p">)),</span>
+            <span class="p">(</span><span class="s">'relu0'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(</span><span class="n">inplace</span><span class="o">=</span><span class="bp">True</span><span class="p">)),</span>
+            <span class="p">(</span><span class="s">'pool0'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">MaxPool2d</span><span class="p">(</span><span class="n">kernel_size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">stride</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">padding</span><span class="o">=</span><span class="mi">1</span><span class="p">)),</span>
+        <span class="p">]))</span>
+
+        <span class="c1"># Add multiple denseblocks based on config 
+</span>        <span class="c1"># for densenet-121 config: [6,12,24,16]
+</span>        <span class="n">num_features</span> <span class="o">=</span> <span class="n">num_init_features</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">num_layers</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">block_config</span><span class="p">):</span>
+            <span class="n">block</span> <span class="o">=</span> <span class="n">_DenseBlock</span><span class="p">(</span>
+                <span class="n">num_layers</span><span class="o">=</span><span class="n">num_layers</span><span class="p">,</span>
+                <span class="n">num_input_features</span><span class="o">=</span><span class="n">num_features</span><span class="p">,</span>
+                <span class="n">bn_size</span><span class="o">=</span><span class="n">bn_size</span><span class="p">,</span>
+                <span class="n">growth_rate</span><span class="o">=</span><span class="n">growth_rate</span><span class="p">,</span>
+                <span class="n">drop_rate</span><span class="o">=</span><span class="n">drop_rate</span><span class="p">,</span>
+                <span class="n">memory_efficient</span><span class="o">=</span><span class="n">memory_efficient</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'denseblock</span><span class="si">%</span><span class="s">d'</span> <span class="o">%</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="n">block</span><span class="p">)</span>
+            <span class="n">num_features</span> <span class="o">=</span> <span class="n">num_features</span> <span class="o">+</span> <span class="n">num_layers</span> <span class="o">*</span> <span class="n">growth_rate</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">block_config</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="c1"># add transition layer between denseblocks to 
+</span>                <span class="c1"># downsample
+</span>                <span class="n">trans</span> <span class="o">=</span> <span class="n">_Transition</span><span class="p">(</span><span class="n">num_input_features</span><span class="o">=</span><span class="n">num_features</span><span class="p">,</span>
+                                    <span class="n">num_output_features</span><span class="o">=</span><span class="n">num_features</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'transition</span><span class="si">%</span><span class="s">d'</span> <span class="o">%</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="n">trans</span><span class="p">)</span>
+                <span class="n">num_features</span> <span class="o">=</span> <span class="n">num_features</span> <span class="o">//</span> <span class="mi">2</span>
+
+        <span class="c1"># Final batch norm
+</span>        <span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'norm5'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">BatchNorm2d</span><span class="p">(</span><span class="n">num_features</span><span class="p">))</span>
+
+        <span class="c1"># Linear layer
+</span>        <span class="bp">self</span><span class="o">.</span><span class="n">classifier</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">num_features</span><span class="p">,</span> <span class="n">num_classes</span><span class="p">)</span>
+
+        <span class="c1"># Official init from torch repo.
+</span>        <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">modules</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">):</span>
+                <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">kaiming_normal_</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">weight</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">BatchNorm2d</span><span class="p">):</span>
+                <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">constant_</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">constant_</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">bias</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">):</span>
+                <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">constant_</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">bias</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">features</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">features</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">adaptive_avg_pool2d</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">classifier</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span>
+</code></pre></div></div>
+
+<p>Let’s use the above implementation to create <code class="highlighter-rouge">densenet-121</code> architecture.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">_densenet</span><span class="p">(</span><span class="n">arch</span><span class="p">,</span> <span class="n">growth_rate</span><span class="p">,</span> <span class="n">block_config</span><span class="p">,</span> <span class="n">num_init_features</span><span class="p">,</span> <span class="n">pretrained</span><span class="p">,</span> <span class="n">progress</span><span class="p">,</span>
+              <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">DenseNet</span><span class="p">(</span><span class="n">growth_rate</span><span class="p">,</span> <span class="n">block_config</span><span class="p">,</span> <span class="n">num_init_features</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">model</span>
+
+<span class="k">def</span> <span class="nf">densenet121</span><span class="p">(</span><span class="n">pretrained</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">progress</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">_densenet</span><span class="p">(</span><span class="s">'densenet121'</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">16</span><span class="p">),</span> <span class="mi">64</span><span class="p">,</span> <span class="n">pretrained</span><span class="p">,</span> <span class="n">progress</span><span class="p">,</span>
+                     <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>Here’s what happens. First, we initialize the stem of the DenseNet architecture - this is the <code class="highlighter-rouge">convolution and pooling</code> part from table-1.</p>
+
+<p>This part of the code does that:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code>        <span class="bp">self</span><span class="o">.</span><span class="n">features</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">OrderedDict</span><span class="p">([</span>
+            <span class="p">(</span><span class="s">'conv0'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">num_init_features</span><span class="p">,</span> <span class="n">kernel_size</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span> <span class="n">stride</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                                <span class="n">padding</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="bp">False</span><span class="p">)),</span>
+            <span class="p">(</span><span class="s">'norm0'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">BatchNorm2d</span><span class="p">(</span><span class="n">num_init_features</span><span class="p">)),</span>
+            <span class="p">(</span><span class="s">'relu0'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(</span><span class="n">inplace</span><span class="o">=</span><span class="bp">True</span><span class="p">)),</span>
+            <span class="p">(</span><span class="s">'pool0'</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">MaxPool2d</span><span class="p">(</span><span class="n">kernel_size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">stride</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">padding</span><span class="o">=</span><span class="mi">1</span><span class="p">)),</span>
+        <span class="p">]))</span>
+</code></pre></div></div>
+
+<p>Next, based on the config, we create a <code class="highlighter-rouge">DenseBlock</code> based on the number of layers in the config.</p>
+
+<p>This part of the code does this:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">num_layers</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">block_config</span><span class="p">):</span>
+            <span class="n">block</span> <span class="o">=</span> <span class="n">_DenseBlock</span><span class="p">(</span>
+                <span class="n">num_layers</span><span class="o">=</span><span class="n">num_layers</span><span class="p">,</span>
+                <span class="n">num_input_features</span><span class="o">=</span><span class="n">num_features</span><span class="p">,</span>
+                <span class="n">bn_size</span><span class="o">=</span><span class="n">bn_size</span><span class="p">,</span>
+                <span class="n">growth_rate</span><span class="o">=</span><span class="n">growth_rate</span><span class="p">,</span>
+                <span class="n">drop_rate</span><span class="o">=</span><span class="n">drop_rate</span><span class="p">,</span>
+                <span class="n">memory_efficient</span><span class="o">=</span><span class="n">memory_efficient</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'denseblock</span><span class="si">%</span><span class="s">d'</span> <span class="o">%</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="n">block</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>Finally, we add <code class="highlighter-rouge">Transition</code> Layers between <code class="highlighter-rouge">DenseBlock</code>s.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code>            <span class="k">if</span> <span class="n">i</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">block_config</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="c1"># add transition layer between denseblocks to 
+</span>                <span class="c1"># downsample
+</span>                <span class="n">trans</span> <span class="o">=</span> <span class="n">_Transition</span><span class="p">(</span><span class="n">num_input_features</span><span class="o">=</span><span class="n">num_features</span><span class="p">,</span>
+                                    <span class="n">num_output_features</span><span class="o">=</span><span class="n">num_features</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="s">'transition</span><span class="si">%</span><span class="s">d'</span> <span class="o">%</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="n">trans</span><span class="p">)</span>
+                <span class="n">num_features</span> <span class="o">=</span> <span class="n">num_features</span> <span class="o">//</span> <span class="mi">2</span>
+</code></pre></div></div>
+
+<p>And that’s all the magic behind <strong>DenseNet</strong>s!</p>
+
+<h2 id="conclusion">Conclusion</h2>
+<p>Congratulations! Today, together, we successfully understood what <strong>DenseNet</strong>s are and also understood the torchvision implementation of <strong>DenseNet</strong>s. I hope that by now you have a very thorough understanding of the <strong>DenseNet</strong> architecture.</p>
+
+<p>As always, constructive feedback is always welcome at <a href="https://twitter.com/amaarora">@amaarora</a>.</p>
+
+<p>Also, feel free to <a href="https://amaarora.github.io/subscribe">subscribe to my blog here</a> to receive regular updates regarding new blog posts. Thanks for reading!</p>
+
+<h2 id="credits">Credits</h2>
+<p>All code implementations have been directly copied from <a href="https://github.com/pytorch/vision/blob/master/torchvision/models/densenet.py">torchvision</a>.</p>

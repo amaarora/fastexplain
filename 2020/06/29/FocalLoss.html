@@ -1,0 +1,143 @@
+<h1 id="what-is-focal-loss-and-when-should-you-use-it">What is Focal Loss and when should you use it?</h1>
+
+<p>In this blogpost we will understand what Focal Loss and when is it used. We will also take a dive into the math and implement it in PyTorch.</p>
+
+<ol id="markdown-toc">
+  <li><a href="#what-is-focal-loss-and-when-should-you-use-it" id="markdown-toc-what-is-focal-loss-and-when-should-you-use-it">What is Focal Loss and when should you use it?</a>    <ol>
+      <li><a href="#where-was-focal-loss-introduced-and-what-was-it-used-for" id="markdown-toc-where-was-focal-loss-introduced-and-what-was-it-used-for">Where was Focal Loss introduced and what was it used for?</a></li>
+      <li><a href="#so-why-did-that-work-what-did-focal-loss-do-to-make-it-work" id="markdown-toc-so-why-did-that-work-what-did-focal-loss-do-to-make-it-work">So, why did that work? What did Focal Loss do to make it work?</a></li>
+      <li><a href="#alpha-and-gamma" id="markdown-toc-alpha-and-gamma">Alpha and Gamma?</a></li>
+      <li><a href="#how-to-implement-this-in-code" id="markdown-toc-how-to-implement-this-in-code">How to implement this in code?</a></li>
+      <li><a href="#credits" id="markdown-toc-credits">Credits</a></li>
+    </ol>
+  </li>
+</ol>
+
+<h2 id="where-was-focal-loss-introduced-and-what-was-it-used-for">Where was Focal Loss introduced and what was it used for?</h2>
+<p>Before understanding what Focal Loss is and all the details about it, let’s first quickly get an intuitive understanding of what Focal Loss actually does. Focal loss was implemented in <a href="https://arxiv.org/abs/1708.02002">Focal Loss for Dense Object Detection</a> paper by He et al.</p>
+
+<p>For years before this paper, Object Detection was actually considered a very difficult problem to solve and it was especially considered very hard to detect small size objects inside images. See example below where the model doesn’t predict anything for the motorbike which is of relatively smaller size compared to other images.</p>
+
+<p><img src="/images/IntroFL.PNG" alt="" title="fig-1: Why do we need Focal Loss" /></p>
+
+<p>The reason why in the image above, the bike is not predicted by the model is because this model was trained using <a href="https://en.wikipedia.org/wiki/Cross_entropy">Binary Cross Entropy loss</a> which really asks the model to be confident about what is predicting. Whereasm, what Focal Loss does is that it makes it easier for the model to predict things without being 80-100% sure that this object is “something”. In simple words, giving the model a bit more freedom to take some risk when making predictions. This is particularly important when dealing with highly imbalanced datasets because in some cases (such as cancer detection), we really need to model to take a risk and predict something even if the prediction turns out to be a False Positive.</p>
+
+<p>Therefore, Focal Loss is particularly useful in cases where there is a class imbalance. Another example, is in the case of Object Detection when most pixels are usually background and only very few pixels inside an image sometimes have the object of interest.</p>
+
+<p>OK - so focal loss was introduced in 2017, and is pretty helpful in dealing with class imbalance - great!</p>
+
+<p>By the way, here are the predictions of the same model when trained with Focal Loss.</p>
+
+<p><img src="/images/FL_preds.PNG" alt="" title="fig-2: Predcitions after Focal Loss training" /></p>
+
+<p>This might be a good time to actually analyse the two and observe the differences. This will help get an intuitive understanding about Focal Loss.</p>
+
+<h2 id="so-why-did-that-work-what-did-focal-loss-do-to-make-it-work">So, why did that work? What did Focal Loss do to make it work?</h2>
+<p>So now that we have seen an example of what Focal Loss can do, let’s try and understand why that worked. The most important bit to understand about Focal Loss is the graph below:</p>
+
+<p><img src="/images/FL_v_CE.png" alt="" title="fig-3: Comparing Focal Loss with Cross Entropy Loss" /></p>
+
+<p>In the graph above, the “blue” line represents the <strong>Cross Entropy Loss</strong>. The X-axis or ‘probability of ground truth class’ (let’s call it <code class="highlighter-rouge">pt</code> for simplicity) is the probability that the model predicts for the ground truth object. 
+As an example, let’s say the model predicts that something is a bike with probability 0.6 and it actually is a bike. The in this case <code class="highlighter-rouge">pt</code> is 0.6. 
+Also, consider the same example but this time the object is not a bike. Then <code class="highlighter-rouge">pt</code> is 0.4 because ground truth here is 0 and probability that the object is not a bike is 0.4 (1-0.6).</p>
+
+<p>The Y-axis is simply the loss value given <code class="highlighter-rouge">pt</code>.</p>
+
+<p>As can be seen from the image, when the model predicts the ground truth with a probability of 0.6, the C<strong>ross Entropy Loss</strong> is still somewhere around 0.5. Therefore, to reduce the loss, our model would have to predict the ground truth label with a much higher probability. In other words, <strong>Cross Entropy Loss</strong> asks the model to be very confident about the ground truth prediction.</p>
+
+<p>This in turn can actually impact the performance negatively:</p>
+
+<blockquote>
+  <p>The Deep Learning model can actually become overconfident and therefore, the model wouldn’t generalize well.</p>
+</blockquote>
+
+<p>This problem of overconfidence is also highlighted in this excellent paper <a href="https://arxiv.org/abs/1910.12656">Beyond temperature scaling: Obtaining well-calibrated multiclass probabilities with Dirichlet calibration</a>. Also, Label Smoothing which was introduced as part of <a href="https://arxiv.org/abs/1512.00567">Rethinking the Inception Architecture for Computer Vision</a> is another way to deal with the problem.</p>
+
+<p>Focal Loss is different from the above mentioned solutions. As can be seen from the graph <code class="highlighter-rouge">Compare FL with CE</code>, using Focal Loss with γ&gt;1 reduces the loss for “well-classified examples” or examples when the model predicts the right thing with probability &gt; 0.5 whereas, it increases loss for “hard-to-classify examples” when the model predicts with probability &lt; 0.5. Therefore, it turns the models attention towards the rare class in case of class imbalance.</p>
+
+<p>The Focal Loss is mathematically defined as:</p>
+
+<p><img src="/images/FL.png" alt="" title="eq-1: Focal Loss" /></p>
+
+<p>Scary? It’s rather quite intuitive - read on :)</p>
+
+<h2 id="alpha-and-gamma">Alpha and Gamma?</h2>
+<p>So, what the hell are these <code class="highlighter-rouge">alpha</code> and <code class="highlighter-rouge">gamma</code> in Focal Loss? Also, we will now represent <code class="highlighter-rouge">alpha</code> as <code class="highlighter-rouge">α</code> and <code class="highlighter-rouge">gamma</code> as <code class="highlighter-rouge">γ</code>.</p>
+
+<p>Here is my understanding from fig-3:</p>
+<blockquote>
+  <p><code class="highlighter-rouge">γ</code> controls the shape of the curve. The higher the value of <code class="highlighter-rouge">γ</code>, the lower the loss for well-classified examples, so we could turn the attention of the model more towards ‘hard-to-classify examples. Having higher <code class="highlighter-rouge">γ</code> extends the range in which an example receives low loss.</p>
+</blockquote>
+
+<p>Also, when <code class="highlighter-rouge">γ=0</code>, this equation is equivalent to Cross Entropy Loss. How? Well, for the mathematically inclined, Cross Entropy Loss is defined as:</p>
+
+<p><img src="/images/CE1.png" alt="" title="eq-2: Cross Entropy Loss" /></p>
+
+<p>After some refactoring and defining <code class="highlighter-rouge">pt</code> as below:</p>
+
+<p><img src="/images/pt.png" alt="" title="eq-3: Probability of Ground Truth" /></p>
+
+<p>Putting <code class="highlighter-rouge">eq-3</code> in <code class="highlighter-rouge">eq-2</code>, our Cross Entropy Loss therefore, becomes:</p>
+
+<p><img src="/images/CE.png" alt="" title="eq-4: Cross Entropy Loss" /></p>
+
+<p>Therefore, at <code class="highlighter-rouge">γ=0</code>, <code class="highlighter-rouge">eq-1</code> becomes equivalent to <code class="highlighter-rouge">eq-4</code> that is Focal Loss becomes equivalent to Cross Entropy Loss. <a href="https://towardsdatascience.com/understanding-binary-cross-entropy-log-loss-a-visual-explanation-a3ac6025181a">Here</a> is an excellent blogpost that explains Cross Entropy Loss.</p>
+
+<p>Ok, great! So now we know what <code class="highlighter-rouge">γ</code> does, but, what does <code class="highlighter-rouge">α</code> do?</p>
+
+<p>Another way, apart from Focal Loss, to deal with class imbalance is to introduce weights. Give high weights to the rare class and small weights to the dominating or common class. These weights are referred to as <code class="highlighter-rouge">α</code>.</p>
+
+<p><img src="/images/Alpha_CE.png" alt="" title="eq-5: Alpha Weighted Cross Entropy Loss" /></p>
+
+<p>Adding these weights does help with class imbalance however, the focal loss paper reports:</p>
+<blockquote>
+  <p>The large class imbalance encountered during training of dense detectors overwhelms the cross entropy loss. Easily classified negatives comprise the majority of the loss and dominate the gradient. While α balances the importance of positive/negative examples, it does not differentiate between easy/hard examples.</p>
+</blockquote>
+
+<p>What the authors are trying to explain is this:</p>
+<blockquote>
+  <p>Even when we add α, while it does add different weights to different classes, thereby balancing the importance of positive/negative examples - just doing this in most cases is not enough. What we also want to do is to reduce the loss of easily-classified examples because otherwise these easily-classified examples would dominate our training.</p>
+</blockquote>
+
+<p>So, how does Focal Loss deal with this? It adds a multiplicative factor to Cross Entropy loss and this multiplicative factor is <code class="highlighter-rouge">(1 − pt)**γ</code> where <code class="highlighter-rouge">pt</code> as you remember is the probability of the ground truth label.</p>
+
+<p>From the paper for Focal Loss:</p>
+<blockquote>
+  <p>We propose to add a modulating factor (1 − pt)**γ to the cross entropy loss, with tunable focusing parameter γ ≥ 0.</p>
+</blockquote>
+
+<p>Really? Is that all that the authors have done? That is to add <code class="highlighter-rouge">(1 − pt)**γ</code> to Cross Entropy Loss? Yes!! Remember <code class="highlighter-rouge">eq-4</code>?</p>
+
+<p><img src="/images/FL.png" alt="" title="eq-6: Alpha Weighted Focal Loss" /></p>
+
+<h2 id="how-to-implement-this-in-code">How to implement this in code?</h2>
+
+<p>While TensorFlow provides this loss function <a href="https://www.tensorflow.org/addons/api_docs/python/tfa/losses/SigmoidFocalCrossEntropy">here</a>, this is not inherently supported by PyTorch so we have to write a custom loss function.</p>
+
+<p>Here is the implementation of Focal Loss in PyTorch:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">WeightedFocalLoss</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="s">"Non weighted version of Focal Loss"</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">.25</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">WeightedFocalLoss</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">alpha</span><span class="p">,</span> <span class="mi">1</span><span class="o">-</span><span class="n">alpha</span><span class="p">])</span><span class="o">.</span><span class="n">cuda</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">=</span> <span class="n">gamma</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">targets</span><span class="p">):</span>
+        <span class="n">BCE_loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">binary_cross_entropy_with_logits</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">targets</span><span class="p">,</span> <span class="n">reduction</span><span class="o">=</span><span class="s">'none'</span><span class="p">)</span>
+        <span class="n">targets</span> <span class="o">=</span> <span class="n">targets</span><span class="o">.</span><span class="nb">type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="nb">long</span><span class="p">)</span>
+        <span class="n">at</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">targets</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="n">pt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">BCE_loss</span><span class="p">)</span>
+        <span class="n">F_loss</span> <span class="o">=</span> <span class="n">at</span><span class="o">*</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="n">pt</span><span class="p">)</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">*</span> <span class="n">BCE_loss</span>
+        <span class="k">return</span> <span class="n">F_loss</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+</code></pre></div></div>
+
+<p>If you’ve understood the meaning of <code class="highlighter-rouge">alpha</code> and <code class="highlighter-rouge">gamma</code> then this implementation should also make sense. Because, similar to the paper it is simply adding a factor of <code class="highlighter-rouge">at*(1-pt)**self.gamma</code> to the <code class="highlighter-rouge">BCE_loss</code> or Binary Cross Entropy Loss.</p>
+
+<h2 id="credits">Credits</h2>
+<p>Please feel free to let me know via <a href="https://twitter.com/amaarora">twitter</a> if you did end up trying Focal Loss after reading this and whether you did see an improvement in your results! Thanks for reading!</p>
+
+<ul>
+  <li>The implementation of Focal Loss has been adapted from <a href="https://www.kaggle.com/c/tgs-salt-identification-challenge/discussion/65938">here</a>.</li>
+  <li><code class="highlighter-rouge">fig-1</code> and <code class="highlighter-rouge">fig-2</code> are from the <a href="http://course18.fast.ai/">Fastai 2018 course</a> Lecture-09!</li>
+</ul>

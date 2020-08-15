@@ -1,0 +1,521 @@
+<h1 id="the-annotated-gpt-2">The Annotated GPT-2</h1>
+
+<ol id="markdown-toc">
+  <li><a href="#the-annotated-gpt-2" id="markdown-toc-the-annotated-gpt-2">The Annotated GPT-2</a>    <ol>
+      <li><a href="#introduction" id="markdown-toc-introduction">Introduction</a></li>
+      <li><a href="#prerequisites" id="markdown-toc-prerequisites">Prerequisites</a></li>
+      <li><a href="#language-models-are-unsupervised-multitask-learners" id="markdown-toc-language-models-are-unsupervised-multitask-learners">Language Models are Unsupervised Multitask Learners</a></li>
+      <li><a href="#abstract" id="markdown-toc-abstract">Abstract</a></li>
+      <li><a href="#model-architecture-gpt-2" id="markdown-toc-model-architecture-gpt-2">Model Architecture (GPT-2)</a></li>
+      <li><a href="#model-specifications-gpt" id="markdown-toc-model-specifications-gpt">Model Specifications (GPT)</a></li>
+      <li><a href="#imports" id="markdown-toc-imports">Imports</a></li>
+      <li><a href="#transformer-decoder-inside-gpt-2" id="markdown-toc-transformer-decoder-inside-gpt-2">Transformer Decoder inside GPT-2</a>        <ol>
+          <li><a href="#conv1d-layer-explained" id="markdown-toc-conv1d-layer-explained">CONV1D Layer Explained</a></li>
+          <li><a href="#feedforward-layer-explained" id="markdown-toc-feedforward-layer-explained">FEEDFORWARD Layer Explained</a></li>
+          <li><a href="#attention-layer-explained" id="markdown-toc-attention-layer-explained">ATTENTION Layer Explained</a>            <ol>
+              <li><a href="#scaled-dot-product-attention" id="markdown-toc-scaled-dot-product-attention">Scaled Dot-Product Attention</a></li>
+              <li><a href="#multi-head-attention" id="markdown-toc-multi-head-attention">Multi-Head Attention</a></li>
+            </ol>
+          </li>
+        </ol>
+      </li>
+      <li><a href="#gpt-2-model-architecture-in-code" id="markdown-toc-gpt-2-model-architecture-in-code">GPT-2 Model Architecture in Code</a>        <ol>
+          <li><a href="#transformer-decoder-block--explained" id="markdown-toc-transformer-decoder-block--explained">Transformer Decoder Block  Explained</a></li>
+        </ol>
+      </li>
+      <li><a href="#the-gpt-2-architecture-explained" id="markdown-toc-the-gpt-2-architecture-explained">The GPT-2 Architecture Explained</a>        <ol>
+          <li><a href="#language-modeling-or-classification" id="markdown-toc-language-modeling-or-classification">Language Modeling or Classification</a></li>
+        </ol>
+      </li>
+      <li><a href="#sample-text-generation-using-hugging-face-pretrained-weights" id="markdown-toc-sample-text-generation-using-hugging-face-pretrained-weights">Sample text generation using Hugging Face Pretrained Weights</a></li>
+      <li><a href="#extras" id="markdown-toc-extras">Extras</a></li>
+      <li><a href="#credits" id="markdown-toc-credits">Credits</a></li>
+      <li><a href="#feedback" id="markdown-toc-feedback">Feedback</a></li>
+    </ol>
+  </li>
+</ol>
+
+<h2 id="introduction">Introduction</h2>
+<p>Welcome to “<strong>The Annotated GPT-2</strong>”.</p>
+
+<p>One of the most brilliant and well-explained articles I have ever read is <a href="https://nlp.seas.harvard.edu/2018/04/03/attention.html">The Annotated Transformer</a>. It introduced <strong>Attention</strong> like no other post ever written. The simple idea was to present an “annotated” version of the paper <a href="https://arxiv.org/abs/1706.03762">Attention is all you need</a> along with code.</p>
+
+<p>Something I have come to realize with my little experience in Machine Learning, when you write things in code, the implementation and the secrets become clearer. It is not magic anymore.</p>
+
+<blockquote>
+  <p>There is nothing magic about magic. The magician merely understands something simple which doesn’t appear to be simple or natural to the untrained audience. Once you learn how to hold a card while making your hand look empty, you only need practice before you, too, can “do magic.”</p>
+
+  <p>– Jeffrey Friedl in the book <a href="https://learning.oreilly.com/library/view/mastering-regular-expressions/0596528124/ch01.html">Mastering Regular Expressions</a></p>
+</blockquote>
+
+<p>The <strong><a href="https://openai.com/blog/better-language-models/">GPT-2</a></strong> might seem like magic at first with all it’s glitter and beauty too, but hopefully I would have uncovered that magic for you and revealed all the tricks by the time you finish reading this post. That is my goal. To make it as simple as possible for the keen to understand how the <strong>GPT-2</strong> model works underneath.</p>
+
+<p><strong>Note:</strong> Pretty much the entirety of the code has been copied, inspired and referenced from <a href="https://github.com/huggingface/transformers/blob/master/src/transformers/modeling_gpt2.py">Hugging Face’s implementation</a> of the GPT-2, keeping merely the essentials for simplicity. If you want to train the GPT-2 model on parallel GPUs, save checkpoints while fine-tuning, run inference tasks on multiple CPUs and much more, I would recommend using the Hugging Face API. A simple tutorial on how to do so was recently released by Hugging Face and can be found <a href="https://huggingface.co/blog/how-to-train">here</a>.</p>
+
+<p>In this post, I am not trying to reinvent the wheel, but merely bringing together a list of prexisting excellent resources to make it easier for the reader to grasp GPT-2. I leave it up to the reader to further build upon these foundations in any area they choose.</p>
+
+<blockquote>
+  <p>You can’t build a great building on a weak foundation. You must have a solid foundation if you’re going to have a strong superstructure.</p>
+
+  <p>– Gordon B. Hinckley</p>
+</blockquote>
+
+<h2 id="prerequisites">Prerequisites</h2>
+<p>This post assumes that the reader has a solid understanding of Attention and Transformers. The GPT-2 utilizes a 12-layer Decoder Only Transformer architecture. If you want a refresher or understand Attention and Transformers, here is an excellent list of resources to aid your understanding regarding:</p>
+
+<ol>
+  <li><a href="http://jalammar.github.io/illustrated-transformer/">The illustrated Transformer</a> by Jay Alammar</li>
+  <li><a href="https://nlp.seas.harvard.edu/2018/04/03/attention.html">The Annotated Transformer</a> by Harvard NLP</li>
+  <li><a href="https://www.youtube.com/watch?v=AFkGPmU16QA&amp;list=PLtmWHNX-gukKocXQOkQjuVxglSDYWsSh9&amp;index=18&amp;t=0s">Introduction to the Transformer</a> by Rachel Thomas and Jeremy Howard</li>
+</ol>
+
+<blockquote>
+  <p>If you’re just beginning your journey into NLP or you’re an expert, I would definitely recommend the <a href="https://www.fast.ai/2019/07/08/fastai-nlp/">fast.ai NLP course</a> taught by <a href="https://twitter.com/math_rachel">Rachel Thomas</a> and <a href="https://twitter.com/jeremyphoward">Jeremy Howard</a>. The course starts with the basics including <em>Sentiment Classification using Naive Bayes and Logistic Regression</em>, moves on to <em>RNNs</em> and also talks about <em>Transfer Learning</em>, <em>ULMFiT</em>, <em>Seq2Seq translation</em> and <em>Transformers</em> amongst other things. It is an excellent resource put together by the fast.ai team free of cost.</p>
+
+  <p>Another amazing resource on GPT-2 itself, is <a href="http://jalammar.github.io/illustrated-gpt2/">The Illustrated GPT-2</a> by Jay Alammar. This post starts with a basic introduction to Language Models and explains the GPT-2 model step-by-step in a very easy to understand manner. I would highly recommend the reader to give this post a read.</p>
+
+  <p><a href="https://nlp.seas.harvard.edu/2018/04/03/attention.html">The Annotated Transformer</a> by Harvard NLP implements the complete Transformer architecture using PyTorch and is great way to understand Attention in depth.</p>
+
+  <p>Let’s then build upon these excellent existing resources and implement GPT-2 in code.</p>
+</blockquote>
+
+<hr />
+<h2 id="language-models-are-unsupervised-multitask-learners">Language Models are Unsupervised Multitask Learners</h2>
+
+<hr />
+
+<h2 id="abstract">Abstract</h2>
+<p>Natural language processing tasks, such as question answering, machine translation, reading comprehension, and summarization, are typically approached with supervised learning on taskspecific datasets. We demonstrate that language models begin to learn these tasks without any explicit supervision when trained on a new dataset of millions of webpages called WebText. 
+Our largest model, GPT-2, is a 1.5B parameter Transformer that achieves state of the art results on 7 out of 8 tested language modeling datasets in a zero-shot setting but still underfits WebText. Samples from the model reflect these improvements and contain coherent paragraphs of text. These findings suggest a promising path towards building language processing systems which learn to perform tasks from their naturally occurring demonstrations.</p>
+
+<blockquote>
+  <p>A Zero-shot setting is one where you do not finetune the language model and directly run inference on the target dataset. For example, pretrain a LM on WebText and directly try and predict the next words of Amazon Movie reviews dataset.</p>
+</blockquote>
+
+<h2 id="model-architecture-gpt-2">Model Architecture (GPT-2)</h2>
+<p>We use a <a href="https://arxiv.org/abs/1706.03762">Transformer</a> (Vaswani et al., 2017) based architecture for our LMs. The model largely follows the details of the <a href="https://s3-us-west-2.amazonaws.com/openai-assets/research-covers/language-unsupervised/language_understanding_paper.pdf">OpenAI GPT model</a> (Radford et al., 2018) with a few modifications. <a href="https://arxiv.org/abs/1607.06450">Layer normalization</a> (Ba et al., 2016) was moved to the input of each sub-block, similar to a pre-activation residual network (He et al., 2016) and an additional layer normalization was added after the final self-attention block.
+We scale the weights of residual layers at initialization by a factor of <code class="highlighter-rouge">1/√N</code> where N is the number of residual layers. The vocabulary is expanded to 50,257 words. We also <strong>increase the context size from 512 to 1024</strong> tokens and a larger batchsize of 512 is used.</p>
+
+<blockquote>
+  <p>This is the entirety of model explanation inside the <code class="highlighter-rouge">GPT-2</code> research paper. This warrants a need for us to look at the architecture inside the <code class="highlighter-rouge">GPT</code> model.</p>
+</blockquote>
+
+<h2 id="model-specifications-gpt">Model Specifications (GPT)</h2>
+<p>Our model largely follows the original transformer work. We trained a <strong>12-layer decoder-only transformer</strong> with <strong>masked self-attention heads</strong> (768 dimensional states and 12 attention heads). <strong>For the position-wise feed-forward networks, we used 3072 dimensional inner states.</strong> We used the Adam optimization scheme with a max learning rate of 2.5e-4. The learning rate was increased linearly from zero over the first 2000 updates and annealed to 0 using a cosine schedule. We train for 100 epochs on minibatches of 64 randomly sampled, contiguous sequences of 512 tokens. Since <a href="https://arxiv.org/abs/1607.06450">layernorm</a> is used extensively throughout the model, a simple weight initialization of <strong>N(0, 0.02)</strong> was sufficient. We used a <strong><a href="https://arxiv.org/abs/1508.07909">bytepair encoding (BPE)</a></strong> vocabulary with 40,000 merges and residual, embedding, and attention dropouts with a rate of 0.1 for regularization. We also employed a modified version of L2 regularization proposed in, with w = 0.01 on all non bias or gain weights. For the activation function, we used the <a href="https://arxiv.org/abs/1606.08415">Gaussian Error Linear Unit (GELU)</a>.</p>
+
+<p><img src="/images/gpt-architecture.PNG" alt="" title="GPT Architecture" /></p>
+
+<blockquote>
+  <p>As can be seen from the <code class="highlighter-rouge">GPT Architecture</code>, to implement it, we will first need to implement <code class="highlighter-rouge">Masked Self Attention</code> and <code class="highlighter-rouge">Feed Forward</code> layer.</p>
+</blockquote>
+
+<h2 id="imports">Imports</h2>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="n">nn</span>
+<span class="kn">import</span> <span class="nn">torch.nn.functional</span> <span class="k">as</span> <span class="n">F</span>
+<span class="kn">from</span> <span class="nn">torch.nn.modules</span> <span class="kn">import</span> <span class="n">ModuleList</span>
+<span class="kn">from</span> <span class="nn">torch.nn.modules.normalization</span> <span class="kn">import</span> <span class="n">LayerNorm</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="n">np</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">from</span> <span class="nn">tqdm</span> <span class="kn">import</span> <span class="n">tqdm_notebook</span><span class="p">,</span> <span class="n">trange</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="n">level</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">()</span>
+</code></pre></div></div>
+<h2 id="transformer-decoder-inside-gpt-2"><a href="https://arxiv.org/abs/1801.10198">Transformer Decoder inside GPT-2</a></h2>
+<p>To re-use the terminology used to describe the Transformer, the attention is a function of a query (Q) and set of key (K) and value (V) pairs. To handle longer sequences, we modify the multi-head self-attention of the Transformer to reduce memory usage by limiting the dot products between Q and K in:</p>
+
+<p><img src="/images/Attention-formula.PNG" alt="" title="Attention as a combination of query, key &amp; value" /></p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">Conv1D</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nx</span><span class="p">,</span> <span class="n">nf</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nf</span> <span class="o">=</span> <span class="n">nf</span>
+        <span class="n">w</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">nx</span><span class="p">,</span> <span class="n">nf</span><span class="p">)</span>
+        <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">std</span><span class="o">=</span><span class="mf">0.02</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">w</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">nf</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">size_out</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">()[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nf</span><span class="p">,)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">addmm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">size_out</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span>
+</code></pre></div></div>
+<h3 id="conv1d-layer-explained">CONV1D Layer Explained</h3>
+<p>The <code class="highlighter-rouge">CONV1D</code> layer can be thought of as a LINEAR layer itself. Essentially, it is casting an initial tensor <code class="highlighter-rouge">x</code> (having the final dimension of <code class="highlighter-rouge">x.size(-1)</code>) being passed to it to have a final dimension of size <code class="highlighter-rouge">self.nf</code>.</p>
+
+<p>Here’s an example output of the same:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">d_model</span> <span class="o">=</span> <span class="mi">768</span>
+<span class="n">conv1d</span>  <span class="o">=</span> <span class="n">Conv1D</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">d_model</span><span class="o">*</span><span class="mi">3</span><span class="p">)</span>
+<span class="n">x</span>       <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">4</span><span class="p">,</span><span class="n">d_model</span><span class="p">)</span> <span class="c1">#represents a sequence of batch_size=1, seq_len=4 and embedding_sz=768, something like "Hello how are you"
+</span><span class="n">x</span>       <span class="o">=</span> <span class="n">conv1d</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+
+<span class="o">&gt;&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Size</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">2304</span><span class="p">])</span>
+</code></pre></div></div>
+<p>As can be seen in the example above, the final dimension of tensor returned by <code class="highlighter-rouge">CONV1D</code> is 3 times the initial size. We do this to be able to cast the input to <code class="highlighter-rouge">query</code>, <code class="highlighter-rouge">key</code> and <code class="highlighter-rouge">value</code> matrices.</p>
+
+<p>It is possible then to retrieve the query, key and value matrices like so:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span> 
+<span class="o">&gt;&gt;</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Size</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">768</span><span class="p">]),</span> <span class="n">torch</span><span class="o">.</span><span class="n">Size</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">768</span><span class="p">]),</span> <span class="n">torch</span><span class="o">.</span><span class="n">Size</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">768</span><span class="p">]))</span>
+</code></pre></div></div>
+
+<blockquote>
+  <p>Another way to cast the input to <code class="highlighter-rouge">Q</code>, <code class="highlighter-rouge">K</code> and <code class="highlighter-rouge">V</code> matrices would have to been to have separate <code class="highlighter-rouge">Wq</code>, <code class="highlighter-rouge">Wk</code> and <code class="highlighter-rouge">Wv</code> matrices. I have explained this under the <strong>EXTRA</strong> section of this post at the bottom. I find this other approach more intuitive and relatable, but we use the <code class="highlighter-rouge">CONV1D</code> layer in this post, because we reuse the <code class="highlighter-rouge">CONV1D</code> pretrained weights from Hugging Face.</p>
+</blockquote>
+
+<h3 id="feedforward-layer-explained">FEEDFORWARD Layer Explained</h3>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">FeedForward</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dropout</span><span class="p">,</span> <span class="n">d_model</span><span class="o">=</span><span class="mi">768</span><span class="p">,</span> <span class="n">nx</span><span class="o">=</span><span class="mi">768</span><span class="o">*</span><span class="mi">4</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">c_fc</span>    <span class="o">=</span> <span class="n">Conv1D</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">nx</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">c_proj</span>  <span class="o">=</span> <span class="n">Conv1D</span><span class="p">(</span><span class="n">nx</span><span class="p">,</span> <span class="n">d_model</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">act</span>     <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">gelu</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dropout</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="n">dropout</span><span class="p">)</span>
+        
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">dropout</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">c_proj</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">act</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">c_fc</span><span class="p">(</span><span class="n">x</span><span class="p">))))</span>
+</code></pre></div></div>
+<p>Something, that’s just so well explained in Jay Alammar’s post - also referenced above, is how the inputs are passed through <code class="highlighter-rouge">ATTENTION</code> layer first and then on to <code class="highlighter-rouge">FEEDFORWARD</code> layer. The Feedforward network, is a normal nueral network that accepts the outputs from the <code class="highlighter-rouge">ATTENTION</code> layer (768), casts them to <code class="highlighter-rouge">nx</code> (768*4) dimension, adds an activation function <code class="highlighter-rouge">self.act</code> (GELU), casts them back to <code class="highlighter-rouge">d_model</code> (768) and adds dropout (0.1).</p>
+
+<p>This is also mentioned in the <strong>GPT</strong> research paper referenced below.</p>
+<blockquote>
+  <p>For the position-wise feed-forward networks, we used 3072 dimensional inner states</p>
+</blockquote>
+
+<h3 id="attention-layer-explained">ATTENTION Layer Explained</h3>
+
+<blockquote>
+  <p>The below extract is from the paper <a href="https://arxiv.org/abs/1706.03762">Attention is all you need</a>.</p>
+</blockquote>
+
+<h4 id="scaled-dot-product-attention">Scaled Dot-Product Attention</h4>
+<p>We call our particular attention “Scaled Dot-Product Attention”. The input consists of queries and keys of dimension dk, and values of dimension dv. We compute the dot products of the query with all keys, divide each by √dk, and apply a softmax function to obtain the weights on the values.</p>
+
+<p><img src="/images/Attention-dot-product.PNG" alt="" title="Attention Dot Product" /></p>
+
+<p>In practice, we compute the attention function on a set of queries simultaneously, packed together into a matrix Q. The keys and values are also packed together into matrices K and V . We compute the matrix of outputs as:</p>
+
+<p><img src="/images/Attention-formula.PNG" alt="" title="Output matrix as a combination of `Q`, `K` and `V`" /></p>
+
+<p>The two most commonly used attention functions are additive attention, and dot-product (multiplicative) attention. Dot-product attention is identical to our algorithm, except for the scaling factor of <code class="highlighter-rouge">1/√dk</code>. Additive attention computes the compatibility function using a feed-forward network with a single hidden layer. While the two are similar in theoretical complexity, dot-product attention is much faster and more space-efficient in practice, since it can be implemented using highly optimized matrix multiplication code. While for small values of dk the two mechanisms perform similarly, additive attention outperforms dot product attention without scaling for larger values of <code class="highlighter-rouge">dk</code>. We suspect that for large values of <code class="highlighter-rouge">dk</code>, the dot products grow large in magnitude, pushing the softmax function into regions where it has extremely small gradients. To counteract this effect, we scale the dot products by <code class="highlighter-rouge">1/√dk</code>.</p>
+
+<blockquote>
+  <p>To implement the The Attention layer in code, we first utilize the <code class="highlighter-rouge">CONV1D</code> layer and get the <code class="highlighter-rouge">q</code>, <code class="highlighter-rouge">k</code> and <code class="highlighter-rouge">v</code> matrices as explained before.</p>
+
+  <p>Once we have the <code class="highlighter-rouge">q</code>, <code class="highlighter-rouge">k</code> and <code class="highlighter-rouge">v</code> matrices, we can perform attention using the function <code class="highlighter-rouge">_attn</code>. This function replicates the formula mentioned above inside <code class="highlighter-rouge">Attention Dot Product</code>.</p>
+</blockquote>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">Attention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d_model</span><span class="o">=</span><span class="mi">768</span><span class="p">,</span> <span class="n">n_head</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="n">n_ctx</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">d_head</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span>  <span class="o">=</span> <span class="n">n_head</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">d_model</span> <span class="o">=</span> <span class="n">d_model</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">c_attn</span>  <span class="o">=</span> <span class="n">Conv1D</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">d_model</span><span class="o">*</span><span class="mi">3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scale</span>   <span class="o">=</span> <span class="n">scale</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">softmax</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Softmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span><span class="s">"bias"</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">n_ctx</span><span class="p">,</span> <span class="n">n_ctx</span><span class="p">))</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n_ctx</span><span class="p">,</span> <span class="n">n_ctx</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dropout</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">c_proj</span>  <span class="o">=</span> <span class="n">Conv1D</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">d_model</span><span class="p">)</span>
+        
+    <span class="k">def</span> <span class="nf">split_heads</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="s">"return shape [`batch`, `head`, `sequence`, `features`]"</span>
+        <span class="n">new_shape</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">()[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">//</span><span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">)</span> 
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">new_shape</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">permute</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> 
+    
+    <span class="k">def</span> <span class="nf">_attn</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">attn_mask</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="n">scores</span>  <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale</span><span class="p">:</span> <span class="n">scores</span> <span class="o">=</span> <span class="n">scores</span><span class="o">/</span><span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="n">nd</span><span class="p">,</span> <span class="n">ns</span>  <span class="o">=</span> <span class="n">scores</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">),</span> <span class="n">scores</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">attn_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span> <span class="n">scores</span> <span class="o">=</span> <span class="n">scores</span> <span class="o">+</span> <span class="n">attn_mask</span>
+        <span class="n">scores</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="p">)</span>
+        <span class="n">scores</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dropout</span><span class="p">(</span><span class="n">scores</span><span class="p">)</span>
+        <span class="n">outputs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">outputs</span>
+    
+    <span class="k">def</span> <span class="nf">merge_heads</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">x</span>         <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">permute</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+        <span class="n">new_shape</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">()[:</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">)</span><span class="o">*</span><span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),)</span>
+        <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">*</span><span class="n">new_shape</span><span class="p">)</span>
+        
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">x</span>        <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">c_attn</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="c1">#new `x` shape - `[1,3,2304]`
+</span>        <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span>  <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">d_model</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_heads</span><span class="p">(</span><span class="n">q</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_heads</span><span class="p">(</span><span class="n">k</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_heads</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+        <span class="n">out</span>      <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_attn</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+        <span class="n">out</span>      <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">merge_heads</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+        <span class="n">out</span>      <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">c_proj</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span>
+</code></pre></div></div>
+<blockquote>
+  <p>Another way to implement <code class="highlighter-rouge">Attention</code> is explained in the <code class="highlighter-rouge">Extras</code> section at the bottom of this blog. I find it to be more intuitive and easy to compare with the research paper. It utilizes Linear layers instead of <code class="highlighter-rouge">CONV1D</code> to cast inputs to <code class="highlighter-rouge">Q</code>, <code class="highlighter-rouge">K</code> and <code class="highlighter-rouge">V</code> matrices. The reason why we haven’t used it is because we use the pretrained weights for <code class="highlighter-rouge">CONV1D</code> layer from Hugging Face.</p>
+</blockquote>
+
+<h4 id="multi-head-attention">Multi-Head Attention</h4>
+<blockquote>
+  <p>The below extract is from the paper <a href="https://arxiv.org/abs/1706.03762">Attention is all you need</a>.</p>
+</blockquote>
+
+<p>Instead of performing a single attention function with dmodel-dimensional keys, values and queries, we found it beneficial to linearly project the <code class="highlighter-rouge">queries</code>, <code class="highlighter-rouge">keys</code> and <code class="highlighter-rouge">values</code> h times with different, learned linear projections to <code class="highlighter-rouge">dk</code>, <code class="highlighter-rouge">dk</code> and <code class="highlighter-rouge">dv</code> dimensions, respectively. On each of these projected versions of <code class="highlighter-rouge">queries</code>, <code class="highlighter-rouge">keys</code> and <code class="highlighter-rouge">values</code> we then perform the attention function in parallel, yielding <code class="highlighter-rouge">dv</code>-dimensional output values. These are <strong>concatenated</strong> and once again projected, resulting in the final values, as depicted in Figure below.</p>
+
+<p><img src="/images/Transformers-multi-head-attention.PNG" alt="" title="Multi Head Attention" /></p>
+
+<p>Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions. With a single attention head, averaging inhibits this.</p>
+
+<p><img src="/images/multi-head-attn-formula.PNG" alt="" title="Multi Head Attention as an equation" /></p>
+
+<p>In this work we employ h = 8 parallel attention layers, or heads. For each of these we use dk = dv = dmodel/h = 64. Due to the reduced dimension of each head, the total computational cost is similar to that of single-head attention with full dimensionality.</p>
+
+<blockquote>
+  <p>Not to be confused by this, in essence all that’s being done is to add another dimension to the <code class="highlighter-rouge">Q</code>, <code class="highlighter-rouge">K</code> and <code class="highlighter-rouge">V</code> matrices. That is, if the matrices were before of size <code class="highlighter-rouge">[1, 4, 768]</code> which represents <code class="highlighter-rouge">[bs, seq_len, d_model]</code>, these matrices are projected to dimension <code class="highlighter-rouge">[1, 12, 4, 64]</code> which represents <code class="highlighter-rouge">[bs, n_head, seq_len, d_model//n_head]</code>. GPT-2 utizes 12 parallel heads. We split the <code class="highlighter-rouge">Q</code>, <code class="highlighter-rouge">K</code>, <code class="highlighter-rouge">V</code> matrices inside <code class="highlighter-rouge">split_heads</code> function. Finally, once we get an output from applying parallel attentions we concatenate it inside <code class="highlighter-rouge">merge_heads</code> back to matrices of dimension <code class="highlighter-rouge">[bs, seq_len, d_model]</code>.</p>
+</blockquote>
+
+<h2 id="gpt-2-model-architecture-in-code">GPT-2 Model Architecture in Code</h2>
+
+<p><img src="/images/gpt-architecture.PNG" alt="" title="GPT Architecture" /></p>
+
+<p>So far, we have implemented <code class="highlighter-rouge">Multi Head Attention</code> and <code class="highlighter-rouge">FeedForward</code> layers. The two layers form the building blocks of the <code class="highlighter-rouge">Transformer Decoder</code> block, shown in the picture above. The GPT-2 consists of 12 of these Transformer Blocks.</p>
+
+<p>This has been shown in Jay Alammar’s post like so: 
+<img src="/images/GPT-transformer-block.PNG" alt="" title="GPT Architecture consisting of 12 Decoder Blocks" /></p>
+
+<h3 id="transformer-decoder-block--explained">Transformer Decoder Block  Explained</h3>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">TransformerBlock</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d_model</span><span class="o">=</span><span class="mi">768</span><span class="p">,</span> <span class="n">n_head</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="n">dropout</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">TransformerBlock</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attn</span>        <span class="o">=</span> <span class="n">Attention</span><span class="p">(</span><span class="n">d_model</span><span class="o">=</span><span class="mi">768</span><span class="p">,</span> <span class="n">n_head</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="n">d_head</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">n_ctx</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">feedforward</span> <span class="o">=</span> <span class="n">FeedForward</span><span class="p">(</span><span class="n">dropout</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">d_model</span><span class="o">=</span><span class="mi">768</span><span class="p">,</span> <span class="n">nx</span><span class="o">=</span><span class="mi">768</span><span class="o">*</span><span class="mi">4</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span>        <span class="o">=</span> <span class="n">LayerNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span>        <span class="o">=</span> <span class="n">LayerNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">)</span>
+                
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">feedforward</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">x</span>
+</code></pre></div></div>
+<p>The <code class="highlighter-rouge">Transformer Block</code> consists of Attention and FeedForward Layers. As referenced from the GPT-2 Architecture Model Specification,</p>
+<blockquote>
+  <p><a href="https://arxiv.org/abs/1607.06450">Layer normalization</a> (Ba et al., 2016) was moved to the input of each sub-block
+Here are the sub-blocks are Attention and FeedForward.</p>
+</blockquote>
+
+<p>Thus, inside a Transformer Decoder Block, essentially we first pass the inputs to a <code class="highlighter-rouge">LayerNorm</code> followed by the first sub-block <code class="highlighter-rouge">Attention</code>. Next, we pass the outputs of this sub-block to <code class="highlighter-rouge">LayerNorm</code> again and finally to <code class="highlighter-rouge">FeedForward</code> layer.</p>
+
+<h2 id="the-gpt-2-architecture-explained">The GPT-2 Architecture Explained</h2>
+
+<p>As referenced from the GPT paper,</p>
+
+<blockquote>
+  <p>We trained a 12-layer decoder-only transformer with masked self-attention heads (768 dimensional states and 12 attention heads).</p>
+</blockquote>
+
+<p>Thus, the complete GPT-2 architecture is the <code class="highlighter-rouge">TransformerBlock</code> copied over 12 times.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">_get_clones</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">ModuleList</span><span class="p">([</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">module</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">)])</span>
+
+<span class="k">class</span> <span class="nc">GPT2</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nlayers</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="n">n_ctx</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">d_model</span><span class="o">=</span><span class="mi">768</span><span class="p">,</span> <span class="n">vcb_sz</span><span class="o">=</span><span class="mi">50257</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">GPT2</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nlayers</span> <span class="o">=</span> <span class="n">nlayers</span>
+        <span class="n">block</span>        <span class="o">=</span> <span class="n">TransformerBlock</span><span class="p">(</span><span class="n">d_model</span><span class="o">=</span><span class="mi">768</span><span class="p">,</span> <span class="n">n_head</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="n">dropout</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">h</span>       <span class="o">=</span> <span class="n">_get_clones</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="mi">12</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wte</span>     <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vcb_sz</span><span class="p">,</span> <span class="n">d_model</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wpe</span>     <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">n_ctx</span><span class="p">,</span> <span class="n">d_model</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">drop</span>    <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_f</span>    <span class="o">=</span> <span class="n">LayerNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span>     <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">vcb_sz</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">loss_fn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">CrossEntropyLoss</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">init_weights</span><span class="p">()</span>
+    
+    <span class="k">def</span> <span class="nf">init_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span><span class="o">.</span><span class="n">weight</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wte</span><span class="o">.</span><span class="n">weight</span>
+        <span class="bp">self</span><span class="o">.</span><span class="nb">apply</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_init_weights</span><span class="p">)</span>
+    
+    <span class="k">def</span> <span class="nf">_init_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">,</span> <span class="n">Conv1D</span><span class="p">)):</span>
+            <span class="n">module</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">std</span><span class="o">=</span><span class="mf">0.02</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">Conv1D</span><span class="p">))</span> <span class="ow">and</span> <span class="n">module</span><span class="o">.</span><span class="n">bias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="n">module</span><span class="o">.</span><span class="n">bias</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">):</span>
+            <span class="n">module</span><span class="o">.</span><span class="n">bias</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+            <span class="n">module</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">fill_</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+    
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">src</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">pos_ids</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">pos_ids</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span> <span class="n">pos_ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">src</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">inp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">drop</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">wte</span><span class="p">(</span><span class="n">src</span><span class="p">)</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">wpe</span><span class="p">(</span><span class="n">pos_ids</span><span class="p">)))</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nlayers</span><span class="p">):</span> <span class="n">inp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">h</span><span class="p">[</span><span class="n">i</span><span class="p">](</span><span class="n">inp</span><span class="p">)</span>
+        <span class="n">inp</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+        <span class="n">logits</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+        <span class="n">outputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">logits</span><span class="p">,)</span> <span class="o">+</span> <span class="p">(</span><span class="n">inp</span><span class="p">,)</span>
+        
+        <span class="k">if</span> <span class="n">labels</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">shift_logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+            <span class="n">shift_labels</span> <span class="o">=</span> <span class="n">labels</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">:]</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+            <span class="n">loss</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">loss_fn</span><span class="p">(</span><span class="n">shift_logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">shift_logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">shift_labels</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+            <span class="n">outputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">loss</span><span class="p">,)</span> <span class="o">+</span> <span class="n">outputs</span>
+            <span class="k">return</span> <span class="n">outputs</span>
+        <span class="k">return</span> <span class="n">logits</span>
+</code></pre></div></div>
+
+<blockquote>
+  <p>Something I have not mentioned yet is <code class="highlighter-rouge">Positional Encoding</code> and <code class="highlighter-rouge">Token Embeddings</code>. Since, we cannot pass words such as “hey” or “hello” directly to the model, we first <code class="highlighter-rouge">Tokenize</code> our inputs. Next, we use <code class="highlighter-rouge">Embeddings</code> to represent the tokens as numbers. This <a href="http://jalammar.github.io/illustrated-word2vec/">post</a> by Jay Alammar again explains Embeddings very well.</p>
+
+  <p>Also, since unlike the RNNs where the input words are passed sequentially, Transformers take input matrices in parallel thus losing the sense of position for the words being input. To make up for the loss, before handling the <code class="highlighter-rouge">Token Embeddings</code> to the model, we add <code class="highlighter-rouge">Positional Encoding</code> - a signal that indicates the order of the words in the sequence. Since, as mentioned before, the context size of GPT-2 is 1024, the positional encodings are of dimensions <code class="highlighter-rouge">[1024, 768]</code>.</p>
+</blockquote>
+
+<p><img src="/images/PositionalEncodings.PNG" alt="" title="Positional Encodings referenced from [The Illustrated GPT-2](http://jalammar.github.io/illustrated-gpt2/)" /></p>
+
+<p>Thus, the inputs to the GPT-2 architecture is the sum of <code class="highlighter-rouge">Token Embeddings</code> and <code class="highlighter-rouge">Positional Encodings</code> passed through a <code class="highlighter-rouge">Dropout</code>, to add regularization. Once, we have the input matrix, we pass this through each of the 12 Layers of the GPT-2 architecure, where each layer is a <code class="highlighter-rouge">Transformer Decoder Block</code> that consists of two sublayers - <code class="highlighter-rouge">Attention</code> and <code class="highlighter-rouge">FeedForward Network</code>.</p>
+
+<h4 id="language-modeling-or-classification">Language Modeling or Classification</h4>
+
+<p>When using GPT-2 as a language model, we pass the inputs to a final <code class="highlighter-rouge">LayerNorm</code> and through a Linear layer with a final dimension of size <code class="highlighter-rouge">[768, vocab_sz]</code> (50257) and get an output of size <code class="highlighter-rouge">[1, 4, 50257]</code>. This output represents the next word logits and we can very easily now pass this through a Softmax layer and take <code class="highlighter-rouge">argmax</code> to get the positional of the word inside the vocabulary with the highest probability.</p>
+
+<p>For classification task, we can pass the outputs received from the GPT-2 architecture through a Linear layer with a dimension of size <code class="highlighter-rouge">[768, n]</code> to get probabilities for each category (where <code class="highlighter-rouge">n</code> represents number of categories), pass it through a softmax, get the highest predicted category and use <code class="highlighter-rouge">CrossEntropyLoss</code> to train the architecture to do classification.</p>
+
+<blockquote>
+  <p>And that’s really all the magic behind GPT-2. It’s a Decoder only Transformer Based architecture that takes inputs parallely with Positional Encodings unlike RNNs, passes them through each of it’s 12 Transformer Decoder layers (which consist of Multi head Attention and FeedForward Network) to return the final output.</p>
+
+  <p>Let’s see this model in action in a language model task.</p>
+</blockquote>
+
+<h2 id="sample-text-generation-using-hugging-face-pretrained-weights">Sample text generation using Hugging Face Pretrained Weights</h2>
+
+<p>First, let’s initialize the model with the Pretrained Weights already provided by Hugging Face.</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">model</span> <span class="o">=</span> <span class="n">GPT2</span><span class="p">()</span>
+<span class="c1"># load pretrained_weights from hugging face
+# download file https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-pytorch_model.bin to `.`
+</span>
+<span class="n">model_dict</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span> <span class="c1">#currently with random initialization
+</span><span class="n">state_dict</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s">"./gpt2-pytorch_model.bin"</span><span class="p">)</span> <span class="c1">#pretrained weights
+</span>
+<span class="n">old_keys</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="n">new_keys</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">state_dict</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span> 
+    <span class="k">if</span> <span class="s">"mlp"</span> <span class="ow">in</span> <span class="n">key</span><span class="p">:</span> <span class="c1">#The hugging face state dict references the feedforward network as mlp, need to replace to `feedforward` be able to reuse these weights
+</span>        <span class="n">new_key</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">"mlp"</span><span class="p">,</span> <span class="s">"feedforward"</span><span class="p">)</span>
+        <span class="n">new_keys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_key</span><span class="p">)</span>
+        <span class="n">old_keys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">old_key</span><span class="p">,</span> <span class="n">new_key</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">old_keys</span><span class="p">,</span> <span class="n">new_keys</span><span class="p">):</span> 
+    <span class="n">state_dict</span><span class="p">[</span><span class="n">new_key</span><span class="p">]</span><span class="o">=</span><span class="n">state_dict</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">old_key</span><span class="p">)</span>
+
+<span class="n">pretrained_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">state_dict</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">model_dict</span><span class="p">}</span>
+
+<span class="n">model_dict</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pretrained_dict</span><span class="p">)</span>
+<span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">model_dict</span><span class="p">)</span>
+<span class="n">model</span><span class="o">.</span><span class="nb">eval</span><span class="p">()</span> <span class="c1">#model in inference mode as it's now initialized with pretrained weights
+</span></code></pre></div></div>
+
+<p>Let’s now generate text. We will utilize Hugging Face’s pretrained <code class="highlighter-rouge">Tokenizer</code> to convert words to input embeddings.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">GPT2Tokenizer</span>
+<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">GPT2Tokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s">"gpt2"</span><span class="p">)</span>
+<span class="n">context</span>   <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">"The planet earth"</span><span class="p">)])</span>
+
+
+<span class="k">def</span> <span class="nf">generate</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="n">ntok</span><span class="o">=</span><span class="mi">20</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ntok</span><span class="p">):</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">out</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="n">indices_to_remove</span> <span class="o">=</span> <span class="n">logits</span> <span class="o">&lt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="mi">10</span><span class="p">)[</span><span class="mi">0</span><span class="p">][</span><span class="o">...</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="bp">None</span><span class="p">]</span>
+        <span class="n">logits</span><span class="p">[</span><span class="n">indices_to_remove</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">NINF</span>
+        <span class="n">next_tok</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">context</span><span class="p">,</span> <span class="n">next_tok</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">context</span>
+
+<span class="n">out</span> <span class="o">=</span> <span class="n">generate</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="n">ntok</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+<span class="o">&gt;&gt;</span> <span class="s">'The planet earth is the source of all of all the light," says the study that the government will'</span>
+</code></pre></div></div>
+
+<h2 id="extras">Extras</h2>
+<p>Another way to implement <code class="highlighter-rouge">Attention</code> as shown in the NLP Course by fast.ai referenced from <a href="https://github.com/fastai/course-nlp/blob/master/8-translation-transformer.ipynb">here</a>, that I find to be more intuitive is as below:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">Attention_FASTAI</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d_model</span><span class="o">=</span><span class="mi">768</span><span class="p">,</span> <span class="n">n_head</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="n">d_head</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">n_ctx</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span>   <span class="o">=</span> <span class="n">n_head</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">d_head</span>   <span class="o">=</span> <span class="n">d_head</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">softmax</span>  <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Softmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scale</span>    <span class="o">=</span> <span class="n">scale</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">atn_drop</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Dropout</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wq</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">wk</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">wv</span> <span class="o">=</span> <span class="p">[</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">n_head</span><span class="o">*</span><span class="n">d_head</span><span class="p">,</span> 
+                                               <span class="n">bias</span><span class="o">=</span><span class="n">bias</span><span class="p">)</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">)]</span>
+    
+
+    <span class="k">def</span> <span class="nf">split_heads</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">layer</span><span class="p">,</span> <span class="n">bs</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">layer</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">bs</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">d_head</span><span class="p">)</span><span class="o">.</span><span class="n">permute</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">3</span><span class="p">)</span>
+        
+    <span class="k">def</span> <span class="nf">_attn</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">attn_mask</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="n">scores</span>  <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale</span><span class="p">:</span> <span class="n">scores</span> <span class="o">=</span> <span class="n">scores</span><span class="o">/</span><span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">attn_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span> 
+            <span class="n">scores</span> <span class="o">=</span> <span class="n">scores</span><span class="o">.</span><span class="nb">float</span><span class="p">()</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="n">attn_mask</span><span class="p">,</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s">'inf'</span><span class="p">))</span><span class="o">.</span><span class="n">type_as</span><span class="p">(</span><span class="n">scores</span><span class="p">)</span>
+        <span class="n">attn_prob</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">atn_drop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="p">))</span>
+        <span class="n">attn_vec</span>   <span class="o">=</span> <span class="n">attn_prob</span> <span class="o">@</span> <span class="n">v</span>
+        <span class="k">return</span> <span class="n">attn_vec</span>
+    
+    <span class="k">def</span> <span class="nf">merge_heads</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">bs</span><span class="p">,</span> <span class="n">seq_len</span><span class="p">):</span>
+        <span class="n">x</span>         <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">permute</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">bs</span><span class="p">,</span> <span class="n">seq_len</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="n">bs</span><span class="p">,</span> <span class="n">seq_len</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">q</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">wq</span><span class="p">,</span> <span class="n">wk</span><span class="p">,</span> <span class="n">wv</span>  <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">o</span><span class="p">:</span><span class="bp">self</span><span class="o">.</span><span class="n">split_heads</span><span class="p">(</span><span class="o">*</span><span class="n">o</span><span class="p">,</span> <span class="n">bs</span><span class="p">),</span>
+                        <span class="nb">zip</span><span class="p">((</span><span class="n">q</span><span class="p">,</span><span class="n">k</span><span class="p">,</span><span class="n">v</span><span class="p">),</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wq</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">wk</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">wv</span><span class="p">)))</span>
+        <span class="n">attn_vec</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_attn</span><span class="p">(</span><span class="n">wq</span><span class="p">,</span> <span class="n">wk</span><span class="p">,</span> <span class="n">wv</span><span class="p">)</span>
+        <span class="n">attn_vec</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">merge_heads</span><span class="p">(</span><span class="n">attn_vec</span><span class="p">,</span> <span class="n">bs</span><span class="p">,</span> <span class="n">seq_len</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">attn_vec</span>
+</code></pre></div></div>
+<p>The key difference between the implementation above and the one we have used is that this implementation does not use <code class="highlighter-rouge">CONV1D</code>. Instead, we first pass the input <code class="highlighter-rouge">x</code> to <code class="highlighter-rouge">self.wq</code>, <code class="highlighter-rouge">self.wk</code> and <code class="highlighter-rouge">self.wv</code> Linear Layers to get <code class="highlighter-rouge">wq</code>, <code class="highlighter-rouge">wk</code> and <code class="highlighter-rouge">wv</code> matrices and then perform attention as before.</p>
+
+<h2 id="credits">Credits</h2>
+<blockquote>
+  <p>I just want to take the time to thank <a href="https://twitter.com/math_rachel">Rachel Thomas</a> and <a href="https://twitter.com/jeremyphoward">Jeremy Howard</a> for a great <a href="https://www.fast.ai/2019/07/08/fastai-nlp/">NLP course</a> and the fast.ai course in general, which has helped me bolster my understanding of RNNs, GRUs, AWD-LSTM and Transformers. 
+Also, a special thanks to <a href="https://huggingface.co/">Hugging Face</a> for creating an open source NLP library and providing a number of <a href="https://huggingface.co/transformers/pretrained_models.html">Pretrained Models</a> to use. As mentioned the code in this blog post comes directly from the Hugging Face library.
+And, <a href="http://jalammar.github.io/">Jay Alammar</a> for the excellent work that he has been doing to Visualise machine learning concepts. <a href="http://jalammar.github.io/illustrated-gpt2/">The Illustrated GPT-2</a> is one of the most comprehensive blog posts on GPT-2. 
+Finally, to Harvard NLP, for <a href="https://nlp.seas.harvard.edu/2018/04/03/attention.html">The Annotated Transformer</a>, a beautiful and easy to follow implementation of Transformers in PyTorch.</p>
+</blockquote>
+
+<h2 id="feedback">Feedback</h2>
+<p>Comments or feedback? Please tweet me at <a href="https://twitter.com/amaarora">@amaarora</a></p>
+
+<blockquote class="twitter-tweet" data-theme="light"><p lang="en" dir="ltr">This is a really wonderful resource, and draws together many very nice pieces of work. <a href="https://t.co/CM16ByNrbt">https://t.co/CM16ByNrbt</a></p>&mdash; Jeremy Howard (@jeremyphoward) <a href="https://twitter.com/jeremyphoward/status/1230252636256919552?ref_src=twsrc%5Etfw">February 19, 2020</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+<blockquote class="twitter-tweet"><p lang="en" dir="ltr">Great work pairing GPT2 concepts with the key excerpts from the code. <a href="https://t.co/IkFlAf3Ua8">https://t.co/IkFlAf3Ua8</a></p>&mdash; Jay Alammar جهاد العمار (@jalammar) <a href="https://twitter.com/jalammar/status/1230376378777952256?ref_src=twsrc%5Etfw">February 20, 2020</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+<blockquote class="twitter-tweet"><p lang="en" dir="ltr">&quot;The Annotated GPT-2&quot; blogpost seems to start out a a simple question of asking why use conv-1d vs linear. <br /><br />An awesome read!! <a href="https://t.co/GCju0z3Wri">https://t.co/GCju0z3Wri</a><br /><br /> <a href="https://twitter.com/hashtag/nlproc?src=hash&amp;ref_src=twsrc%5Etfw">#nlproc</a> <a href="https://twitter.com/hashtag/nlposs?src=hash&amp;ref_src=twsrc%5Etfw">#nlposs</a> <a href="https://twitter.com/hashtag/distiller?src=hash&amp;ref_src=twsrc%5Etfw">#distiller</a> <a href="https://t.co/cvSdEah8gT">https://t.co/cvSdEah8gT</a></p>&mdash; Liling Tan (@alvations) <a href="https://twitter.com/alvations/status/1230409491834753027?ref_src=twsrc%5Etfw">February 20, 2020</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+<blockquote class="twitter-tweet"><p lang="en" dir="ltr">A must-read blog about GPT-2. <a href="https://t.co/EuDil5Dm07">https://t.co/EuDil5Dm07</a></p>&mdash; Xinhao Li (@XinhaoLi1) <a href="https://twitter.com/XinhaoLi1/status/1230325895719718912?ref_src=twsrc%5Etfw">February 20, 2020</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+<blockquote class="twitter-tweet"><p lang="en" dir="ltr">One of the best NLP Blogposts I&#39;ve read: A definitive and complete writeup. 🍵<br /><br />This is a blog, I wish I had when I was tinkering with the GPT-2. <br /><br />Must read for everyone: <a href="https://t.co/yLRFywYgm6">https://t.co/yLRFywYgm6</a></p>&mdash; Sanyam Bhutani (@bhutanisanyam1) <a href="https://twitter.com/bhutanisanyam1/status/1230317239305326592?ref_src=twsrc%5Etfw">February 20, 2020</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+<blockquote class="twitter-tweet"><p lang="en" dir="ltr">Neat! <a href="https://t.co/eLt3o180Qr">https://t.co/eLt3o180Qr</a></p>&mdash; Antônio Horta Ribeiro (@ahortaribeiro) <a href="https://twitter.com/ahortaribeiro/status/1230295505680334848?ref_src=twsrc%5Etfw">February 20, 2020</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+<blockquote class="twitter-tweet"><p lang="en" dir="ltr">Fantastic work!! Looking forward to learning what is it behind the scenes of this language model! <a href="https://t.co/Ml1DY22NxQ">https://t.co/Ml1DY22NxQ</a></p>&mdash; Data Enigma (@EnigmaData) <a href="https://twitter.com/EnigmaData/status/1230279492926611457?ref_src=twsrc%5Etfw">February 19, 2020</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+<blockquote class="twitter-tweet"><p lang="en" dir="ltr">The Annotated GPT-2 - Understand how the GPT-2 model works underneath with explanations and source code<br /><br />Blogpost <a href="https://t.co/anLqVhZQPN">https://t.co/anLqVhZQPN</a><a href="https://twitter.com/amaarora?ref_src=twsrc%5Etfw">@amaarora</a><br /><br />𝐬𝐩𝐫𝐞𝐚𝐝 𝐭𝐡𝐞 𝐰𝐨𝐫𝐝 𝐨𝐟 <a href="https://twitter.com/hashtag/%F0%9D%90%8D%F0%9D%90%8B%F0%9D%90%8F?src=hash&amp;ref_src=twsrc%5Etfw">#𝐍𝐋𝐏</a> 💜<a href="https://twitter.com/hashtag/datascience?src=hash&amp;ref_src=twsrc%5Etfw">#datascience</a> <a href="https://twitter.com/hashtag/pytorch?src=hash&amp;ref_src=twsrc%5Etfw">#pytorch</a> <a href="https://twitter.com/hashtag/deeplearning?src=hash&amp;ref_src=twsrc%5Etfw">#deeplearning</a> <a href="https://twitter.com/hashtag/machinelearning?src=hash&amp;ref_src=twsrc%5Etfw">#machinelearning</a> <a href="https://t.co/n5QIQBAIfH">pic.twitter.com/n5QIQBAIfH</a></p>&mdash; Philip Vollet (ﾉ◕ヮ◕)ﾉ*:・ﾟ✧ (@philipvollet) <a href="https://twitter.com/philipvollet/status/1230377455141126144?ref_src=twsrc%5Etfw">February 20, 2020</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+<blockquote class="twitter-tweet"><p lang="en" dir="ltr">This is fantastic <a href="https://twitter.com/amaarora?ref_src=twsrc%5Etfw">@amaarora</a>, thanks 👍</p>&mdash; Manpreet Singh (@ms_ghotratweet) <a href="https://twitter.com/ms_ghotratweet/status/1230333834542977025?ref_src=twsrc%5Etfw">February 20, 2020</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+<blockquote class="twitter-tweet"><p lang="en" dir="ltr">This is brilliant stuff!!!</p>&mdash; Arron Hovingham (@AnalystiaArron) <a href="https://twitter.com/AnalystiaArron/status/1230429756111409153?ref_src=twsrc%5Etfw">February 20, 2020</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+

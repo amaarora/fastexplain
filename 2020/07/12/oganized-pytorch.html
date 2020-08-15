@@ -1,0 +1,311 @@
+<h1 id="an-introduction-to-pytorch-lightning-with-comparisons-to-pytorch">An introduction to PyTorch Lightning with comparisons to PyTorch</h1>
+<p>Have you tried <a href="https://github.com/PyTorchLightning/pytorch-lightning">PytorchLightning</a> already? If so, then you know why it’s so cool. If you haven’t, hopefully by the time you finish reading this post, you will find it pretty cool (the word ‘it’ could refer to this blogpost or the wonderful <a href="https://github.com/PyTorchLightning/pytorch-lightning">PytorchLightning</a> library - I leave this decision to the reader).</p>
+
+<p>Note: From here on, we refer to <strong>PytorchLightning</strong> as <strong>PL</strong>, cause it’s a long name to type and I left my favourite keyboard at work.</p>
+
+<p>For a while now, I was jealous of Tensorflow solely because it’s possible to use the same script to train a model on CPU, GPU or TPU without really changing much! For example, take this <a href="https://www.kaggle.com/cdeotte/triple-stratified-kfold-with-tfrecords">notebook</a> from my one of my favourite kagglers and - at the time of writing this blogpost - a researcher at NVIDIA - <a href="http://chrisdeotte.com/">Chris Deotte</a> and also, since yesterday, Kaggle 4x Grandmaster! 
+Just by using an appropriate <a href="https://www.tensorflow.org/api_docs/python/tf/distribute/Strategy">strategy</a> in Tensorflow, it is possible to run the same experiments on your choice of hardware without changing anything else really. That is the same script could run in TPU, GPU or CPU.</p>
+
+<p>If you’ve already worked on multi-GPU machines or used <a href="https://pytorch.org/xla/release/1.5/index.html">torch XLA</a> to run things on TPU using PyTorch, then you know my rant. Changing hardware choices in PyTorch is not as convenient when it comes to this. I love PyTorch - I do, but just this one thing would make me really frustrated.</p>
+
+<p>Welcome <a href="https://github.com/PyTorchLightning/pytorch-lightning">PL</a>! I wish I tried this library sooner.</p>
+
+<p>In this blogpost, we will be going through an introduction to PL and implement all the cool tricks like - <strong>Gradient Accumulation</strong>, <strong>16-bit precision training</strong>, and also add <strong>TPU/multi-gpu support</strong> - all in a few lines of code. We use PL to work on <a href="https://www.kaggle.com/c/siim-isic-melanoma-classification">SIIM-ISIC Melanoma Classification</a> challenge on Kaggle. In this blogpost, our focus will be on introducing PL and we use the ISIC competition as an example.</p>
+
+<p>We also draw comparisons to the typical workflows in PyTorch and compare how PL is different and the value it adds in a researcher’s life.</p>
+
+<p>The first part of this post, is mostly about getting the data, creating our train and validation datasets and dataloaders and the interesting stuff about PL comes in <strong>The Lightning Module</strong> section of this post. If this stuff bores you because you’ve done this so many times already, feel free to <a href="https://amaarora.github.io/2020/07/12/oganized-pytorch.html#lightning-module">skip</a> forward to the model implemention.</p>
+
+<ol id="markdown-toc">
+  <li><a href="#an-introduction-to-pytorch-lightning-with-comparisons-to-pytorch" id="markdown-toc-an-introduction-to-pytorch-lightning-with-comparisons-to-pytorch">An introduction to PyTorch Lightning with comparisons to PyTorch</a>    <ol>
+      <li><a href="#whats-isic-melanoma-classification-challenge" id="markdown-toc-whats-isic-melanoma-classification-challenge">What’s ISIC Melanoma Classification challenge?</a></li>
+      <li><a href="#getting-the-data" id="markdown-toc-getting-the-data">Getting the data</a></li>
+      <li><a href="#melonama-dataset" id="markdown-toc-melonama-dataset">Melonama Dataset</a></li>
+      <li><a href="#lightning-module" id="markdown-toc-lightning-module">Lightning Module</a>        <ol>
+          <li><a href="#model-and-training" id="markdown-toc-model-and-training">Model and Training</a></li>
+          <li><a href="#model-implementation-compared-to-pytorch" id="markdown-toc-model-implementation-compared-to-pytorch">Model implementation compared to PyTorch</a></li>
+        </ol>
+      </li>
+      <li><a href="#gradient-accumulation" id="markdown-toc-gradient-accumulation">Gradient Accumulation</a></li>
+      <li><a href="#16-bit-precision-training" id="markdown-toc-16-bit-precision-training">16-bit precision training</a></li>
+      <li><a href="#tpu-support" id="markdown-toc-tpu-support">TPU Support</a></li>
+      <li><a href="#conclusion" id="markdown-toc-conclusion">Conclusion</a></li>
+      <li><a href="#credits" id="markdown-toc-credits">Credits</a></li>
+    </ol>
+  </li>
+</ol>
+
+<h2 id="whats-isic-melanoma-classification-challenge">What’s ISIC Melanoma Classification challenge?</h2>
+<p>From the <a href="https://www.kaggle.com/c/siim-isic-melanoma-classification">description</a> on Kaggle,</p>
+<blockquote>
+  <p>Skin cancer is the most prevalent type of cancer. Melanoma, specifically, is responsible for 75% of skin cancer deaths, despite being the least common skin cancer. The American Cancer Society estimates over 100,000 new melanoma cases will be diagnosed in 2020. It’s also expected that almost 7,000 people will die from the disease. As with other cancers, early and accurate detection—potentially aided by data science—can make treatment more effective. Currently, dermatologists evaluate every one of a patient’s moles to identify outlier lesions or “ugly ducklings” that are most likely to be melanoma.</p>
+</blockquote>
+
+<p>In this competition, the participants are asked to build a Melonama classifier that classifies to identify melonama in images of skin lesions. Typical lesion images look like the ones below:</p>
+
+<p><img src="/images/ISIC.png" alt="" title="src: https://www.isic-archive.com/#!/topWithHeader/onlyHeaderTop/gallery" /></p>
+
+<p>In this blogpost, we will use PL to build a solution that can tell the malign melonama images apart from the rest. The model should take only a few hours to train and have 0.92 AUC score!</p>
+
+<blockquote>
+  <p>A side note: Deep learning has come a far way. Compare this to 2012 where <a href="https://papers.nips.cc/paper/4824-imagenet-classification-with-deep-convolutional-neural-networks.pdf">AlexNet</a>  was trained on multiple e GTX 580 GPU which has only 3GB of memory. To train on 1.2 million examples of Imagenet, the authors had to split the model (with just 8 layers) to 2 GPUs. It took 5-6 days to train this network. Today, it’s possible to train in a <a href="https://www.fast.ai/2018/04/30/dawnbench-fastai/">few hours</a> or <a href="https://arxiv.org/abs/1709.05011#:~:text=We%20finish%20the%20100%2Depoch,2048%20KNLs%20without%20losing%20accuracy">even minutes</a>. For ISIC, each epoch for size 256x256 is around 2mins including validation on a P100 GPU.</p>
+</blockquote>
+
+<h2 id="getting-the-data">Getting the data</h2>
+<p>You can download the 256x256 version of the Jpeg images <a href="https://www.kaggle.com/cdeotte/jpeg-melanoma-256x256">here</a> with all the required metadata to follow along.</p>
+
+<h2 id="melonama-dataset">Melonama Dataset</h2>
+<p>Getting our data ready for ingestion into the model is one of the basic things that we need to do for every project.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">MelonamaDataset</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">image_paths</span><span class="p">,</span> <span class="n">targets</span><span class="p">,</span> <span class="n">augmentations</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">image_paths</span> <span class="o">=</span> <span class="n">image_paths</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">targets</span> <span class="o">=</span> <span class="n">targets</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">augmentations</span> <span class="o">=</span> <span class="n">augmentations</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">image_paths</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
+        <span class="n">image_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">image_paths</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+        <span class="n">image</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">Image</span><span class="o">.</span><span class="nb">open</span><span class="p">(</span><span class="n">image_path</span><span class="p">))</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">targets</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">augmentations</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">augmented</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">augmentations</span><span class="p">(</span><span class="n">image</span><span class="o">=</span><span class="n">image</span><span class="p">)</span>
+            <span class="n">image</span> <span class="o">=</span> <span class="n">augmented</span><span class="p">[</span><span class="s">'image'</span><span class="p">]</span>
+        
+        <span class="k">return</span> <span class="n">image</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="nb">long</span><span class="p">)</span>
+</code></pre></div></div>
+<p>The above dataset is a pretty simple class that is instantiated by passing in a list of <code class="highlighter-rouge">image_paths</code>, <code class="highlighter-rouge">targets</code> and <code class="highlighter-rouge">augmentations</code> if any. To get an item, it reads an image using <code class="highlighter-rouge">Image</code> module from <code class="highlighter-rouge">PIL</code>, converts to <code class="highlighter-rouge">np.array</code> performs augmentations if any and returns <code class="highlighter-rouge">target</code> and <code class="highlighter-rouge">image</code>.</p>
+
+<p>We can use <code class="highlighter-rouge">glob</code> to get <code class="highlighter-rouge">train_image_paths</code> and <code class="highlighter-rouge">val_image_paths</code> and create train and val datasets respectively.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># psuedo code
+</span><span class="n">train_image_paths</span> <span class="o">=</span> <span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s">"&lt;path_to_train_folder&gt;"</span><span class="p">)</span>
+<span class="n">val_image_paths</span> <span class="o">=</span> <span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s">"&lt;path_to_val_folder&gt;"</span><span class="p">)</span>
+
+<span class="n">sz</span> <span class="o">=</span> <span class="mi">256</span> <span class="c1">#go bigger for better AUC score but slower train time
+</span>
+<span class="n">train_aug</span> <span class="o">=</span> <span class="n">train_aug</span> <span class="o">=</span> <span class="n">albumentations</span><span class="o">.</span><span class="n">Compose</span><span class="p">([</span>
+    <span class="n">RandomCrop</span><span class="p">(</span><span class="n">sz</span><span class="p">,</span><span class="n">sz</span><span class="p">),</span>
+    <span class="o">...</span><span class="p">,</span> <span class="c1">#your choice of augmentations
+</span>    <span class="n">albumentations</span><span class="o">.</span><span class="n">Normalize</span><span class="p">(</span><span class="n">always_apply</span><span class="o">=</span><span class="bp">True</span><span class="p">),</span> 
+    <span class="n">ToTensorV2</span><span class="p">()</span>
+<span class="p">])</span>
+
+<span class="n">val_aug</span> <span class="o">=</span> <span class="n">albumentations</span><span class="o">.</span><span class="n">Compose</span><span class="p">([</span>
+    <span class="n">albumentations</span><span class="o">.</span><span class="n">CenterCrop</span><span class="p">(</span><span class="n">sz</span><span class="p">,</span> <span class="n">sz</span><span class="p">),</span>
+    <span class="n">albumentations</span><span class="o">.</span><span class="n">Normalize</span><span class="p">(</span><span class="n">always_apply</span><span class="o">=</span><span class="bp">True</span><span class="p">),</span>
+    <span class="n">ToTensorV2</span><span class="p">()</span>
+<span class="p">])</span>
+
+<span class="n">train_dataset</span> <span class="o">=</span> <span class="n">MelonamaDataset</span><span class="p">(</span><span class="n">train_image_paths</span><span class="p">,</span> <span class="n">train_targets</span><span class="p">,</span> <span class="n">train_aug</span><span class="p">)</span>
+<span class="n">val_dataset</span> <span class="o">=</span> <span class="n">MelonamaDataset</span><span class="p">(</span><span class="n">val_image_paths</span><span class="p">,</span> <span class="n">val_targets</span><span class="p">,</span> <span class="n">val_aug</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>Once we have our <code class="highlighter-rouge">datasets</code> ready, we can now create our dataloaders and let’s inspect the train images as a sanity check.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># Dataloaders
+</span><span class="n">train_loader</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span>
+    <span class="n">train_dataset</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+<span class="n">val_loader</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span>
+    <span class="n">val_dataset</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+</code></pre></div></div>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># visualize images
+</span><span class="kn">import</span> <span class="nn">torchvision.utils</span> <span class="k">as</span> <span class="n">vutils</span>
+
+<span class="k">def</span> <span class="nf">matplotlib_imshow</span><span class="p">(</span><span class="n">img</span><span class="p">,</span> <span class="n">one_channel</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="n">fig</span><span class="p">,</span><span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span><span class="mi">8</span><span class="p">))</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">img</span><span class="o">.</span><span class="n">permute</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span>
+
+<span class="n">images</span><span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">train_loader</span><span class="p">))[</span><span class="mi">0</span><span class="p">][:</span><span class="mi">16</span><span class="p">]</span>
+<span class="n">img_grid</span> <span class="o">=</span> <span class="n">torchvision</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">make_grid</span><span class="p">(</span><span class="n">images</span><span class="p">,</span> <span class="n">nrow</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+<span class="n">matplotlib_imshow</span><span class="p">(</span><span class="n">img_grid</span><span class="p">)</span>
+</code></pre></div></div>
+<p><img src="/images/train_images.png" alt="" title="Training images" /></p>
+
+<p>Now that our dataloaders are done, and looking good, we are ready for some lightning for our Melonama classifier!</p>
+
+<h2 id="lightning-module">Lightning Module</h2>
+<p>PL takes away much of the boilerplate code. By taking away the <a href="https://pytorch-lightning.readthedocs.io/en/latest/introduction_guide.html#engineering-code">Engineering Code</a> and the <a href="https://pytorch-lightning.readthedocs.io/en/latest/introduction_guide.html#non-essential-code">Non-essential code</a>, it helps us focus on the <a href="https://pytorch-lightning.readthedocs.io/en/latest/introduction_guide.html#research-code">Research code</a>!</p>
+
+<p>The <a href="https://pytorch-lightning.readthedocs.io/en/stable/new-project.html">Quick Start</a> and <a href="https://pytorch-lightning.readthedocs.io/en/stable/introduction_guide.html">Introduction Guide</a> on PL’s official documentation are great resources to start learning about PL! I started there too.</p>
+
+<h3 id="model-and-training">Model and Training</h3>
+<p>Our model in PL looks something like:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">class</span> <span class="nc">Model</span><span class="p">(</span><span class="n">LightningModule</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arch</span><span class="o">=</span><span class="s">'efficientnet-b0'</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base</span> <span class="o">=</span> <span class="n">EfficientNet</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="n">arch</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">_fc</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">_fc</span><span class="o">.</span><span class="n">in_features</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">configure_optimizers</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">5e-4</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">batch</span><span class="p">):</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span>  <span class="o">=</span> <span class="n">batch</span>
+        <span class="n">y_hat</span> <span class="o">=</span> <span class="bp">self</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">loss</span>  <span class="o">=</span> <span class="n">WeightedFocalLoss</span><span class="p">()(</span><span class="n">y_hat</span><span class="p">,</span> <span class="n">y</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">type_as</span><span class="p">(</span><span class="n">y_hat</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">loss</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">y_hat</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">training_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">batch_nb</span><span class="p">):</span>
+        <span class="n">loss</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">y_hat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s">'loss'</span><span class="p">:</span> <span class="n">loss</span><span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">validation_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">batch_nb</span><span class="p">):</span>
+        <span class="n">loss</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">y_hat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s">'loss'</span><span class="p">:</span> <span class="n">loss</span><span class="p">,</span> <span class="s">'y'</span><span class="p">:</span> <span class="n">y</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="s">'y_hat'</span><span class="p">:</span> <span class="n">y_hat</span><span class="o">.</span><span class="n">detach</span><span class="p">()}</span>
+
+    <span class="k">def</span> <span class="nf">validation_epoch_end</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outputs</span><span class="p">):</span>
+        <span class="n">avg_loss</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">x</span><span class="p">[</span><span class="s">'loss'</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">outputs</span><span class="p">])</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="n">auc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_auc</span><span class="p">(</span><span class="n">outputs</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">f</span><span class="s">"Epoch {self.current_epoch} | AUC:{auc}"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s">'loss'</span><span class="p">:</span> <span class="n">avg_loss</span><span class="p">}</span>
+    
+    <span class="k">def</span> <span class="nf">get_auc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outputs</span><span class="p">):</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">x</span><span class="p">[</span><span class="s">'y'</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">outputs</span><span class="p">])</span>
+        <span class="n">y_hat</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">x</span><span class="p">[</span><span class="s">'y_hat'</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">outputs</span><span class="p">])</span>
+        <span class="c1"># shift tensors to cpu
+</span>        <span class="n">auc</span> <span class="o">=</span> <span class="n">roc_auc_score</span><span class="p">(</span><span class="n">y</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> 
+                            <span class="n">y_hat</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span> 
+        <span class="k">return</span> <span class="n">auc</span>
+</code></pre></div></div>
+
+<p>We are using <a href="https://amaarora.github.io/2020/06/29/FocalLoss.html#how-to-implement-this-in-code">WeightedFocalLoss</a> from my previous blogpost, because this is an imbalanced dataset with only around 1.77% positive classes.</p>
+
+<h3 id="model-implementation-compared-to-pytorch">Model implementation compared to PyTorch</h3>
+<p>We add the <code class="highlighter-rouge">__init__</code> and <code class="highlighter-rouge">forward</code> method just like you would in pure PyTorch. The <code class="highlighter-rouge">LightningModule</code> just adds some extra functionalities on top.</p>
+
+<p>In pure pytorch, the <code class="highlighter-rouge">main</code> loop with training and validation would look something like:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">train_dataset</span><span class="p">,</span> <span class="n">valid_dataset</span> <span class="o">=</span> <span class="n">MelonamaDataset</span><span class="p">(</span><span class="o">...</span><span class="p">),</span> <span class="n">MelonamaDatasaet</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="n">train_loader</span><span class="p">,</span> <span class="n">valid_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">train_dataset</span><span class="p">,</span> <span class="o">...</span><span class="p">),</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">valid_dataset</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<span class="n">optimizer</span> <span class="o">=</span> <span class="o">...</span>
+<span class="n">scheduler</span> <span class="o">=</span> <span class="o">...</span>
+<span class="n">train_augmentations</span> <span class="o">=</span> <span class="n">albumentations</span><span class="o">.</span><span class="n">Compose</span><span class="p">([</span><span class="o">...</span><span class="p">])</span>
+<span class="n">val_aug</span> <span class="o">=</span> <span class="n">albumentations</span><span class="o">.</span><span class="n">Compose</span><span class="p">([</span><span class="o">...</span><span class="p">])</span>
+<span class="n">early_stopping</span> <span class="o">=</span> <span class="n">EarlyStopping</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">PyTorchModel</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="n">train_loss</span> <span class="o">=</span> <span class="n">train_one_epoch</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">optimizer</span><span class="p">,</span> <span class="n">scheduler</span><span class="p">)</span>
+<span class="n">preds</span><span class="p">,</span> <span class="n">valid_loss</span> <span class="o">=</span> <span class="n">evaluate</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">valid_loader</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+<span class="n">report_metrics</span><span class="p">()</span>
+<span class="k">if</span> <span class="n">early_stopping</span><span class="o">.</span><span class="n">early_stop</span><span class="p">:</span>
+    <span class="n">save_model_checkpoint</span><span class="p">()</span>
+    <span class="n">stop_training</span><span class="p">()</span>
+</code></pre></div></div>
+
+<p>And ofcourse, then we define our <code class="highlighter-rouge">train_one_epoch</code> and <code class="highlighter-rouge">evaluate</code> functions where the training loop looks typically like:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">b_idx</span><span class="p">,</span> <span class="n">data</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">train_loader</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">**</span><span class="n">data</span><span class="p">)</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+</code></pre></div></div>
+<p>And very similar for <code class="highlighter-rouge">evaluate</code>. As you can see, we have to write a lot of code to make things work in PyTorch. While this is great for flexibility, typically we have to reuse the same code over and over again in various projects. The training and evaluate loops hardly change much.</p>
+
+<p>What PL does, is that it automates this process for us. No longer do we need to write the boilerplate code.</p>
+
+<p>The training loop, goes directly inside the <code class="highlighter-rouge">training_step</code> method and the validation loop inside the <code class="highlighter-rouge">validation_step</code> method. The typical reporting of metrics happens inside the <code class="highlighter-rouge">validation_epoch_end</code> method. Inside the <code class="highlighter-rouge">Model</code> class, both the <code class="highlighter-rouge">training_step</code> and <code class="highlighter-rouge">validation_step</code> call the <code class="highlighter-rouge">step</code> method which get’s the <code class="highlighter-rouge">x</code>s and <code class="highlighter-rouge">y</code>s from the batch, calls <code class="highlighter-rouge">forward</code> to make a forward pass and returns the loss. When we are finished training, our validation loop get’s called and at the end of an epoch <code class="highlighter-rouge">validation_epoch_end</code> get’s called which accumulates the results for us and calculates <a href="https://scikit-learn.org/stable/modules/generated/sklearn.metrics.roc_auc_score.html">AUC score</a>. We use <code class="highlighter-rouge">roc_auc_score</code> because AUC score is used as a metric on the Kaggle competition itself.</p>
+
+<p>And that’s really it. This is all it takes in PL to create, train and validate a deep learning model. There are some other nice functionalities like logging - <code class="highlighter-rouge">Wandb</code> and also <code class="highlighter-rouge">tensorboard</code> support which you can read more about <a href="https://pytorch-lightning.readthedocs.io/en/latest/loggers.html">here</a>.</p>
+
+<p>Shifting from PyTorch to PL is super easy. It took me around a few hours to read up the introduction docs and reimplement the ISIC model in PL. I find PL code is much more organized and compact compared to PyTorch and still very flexible to run experiments. Also, when sharing solutions with others, everybody knows exactly where to look - for example, the training loop is always in the <code class="highlighter-rouge">training_step</code> method, validation loop is inside the <code class="highlighter-rouge">validation_step</code> and so on.</p>
+
+<p>In some ways, I was able to draw comparisons to the wonderful <a href="https://arxiv.org/abs/2002.04688">fastai</a> library in the sense that both the libraries make our lives easier.</p>
+
+<p>Similar to fastai, to train the model in PL, we can now simply create a <a href="https://pytorch-lightning.readthedocs.io/en/stable/trainer.html">Trainer</a> and call <code class="highlighter-rouge">.fit()</code>.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">debug</span> <span class="o">=</span> <span class="bp">False</span>
+<span class="n">gpus</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">()</span>
+<span class="n">trainer</span> <span class="o">=</span> <span class="n">Trainer</span><span class="p">(</span><span class="n">gpus</span><span class="o">=</span><span class="n">gpus</span><span class="p">,</span> <span class="n">max_epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> 
+                  <span class="n">num_sanity_val_steps</span><span class="o">=</span><span class="mi">1</span> <span class="k">if</span> <span class="n">debug</span> <span class="k">else</span> <span class="mi">0</span><span class="p">)</span>
+
+<span class="n">trainer</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">train_dataloader</span><span class="o">=</span><span class="n">train_loader</span><span class="p">,</span> <span class="n">val_dataloaders</span><span class="o">=</span><span class="n">val_loader</span><span class="p">)</span>
+
+<span class="c1">## outputs
+</span><span class="o">&gt;&gt;</span>  <span class="n">Epoch</span> <span class="mi">0</span> <span class="o">|</span> <span class="n">AUC</span><span class="p">:</span><span class="mf">0.8667878706561116</span>
+    <span class="n">Epoch</span> <span class="mi">1</span> <span class="o">|</span> <span class="n">AUC</span><span class="p">:</span><span class="mf">0.8867006574533746</span>
+</code></pre></div></div>
+
+<p>And that’s really it. This is all it takes to create a baseline model in PL.</p>
+
+<h2 id="gradient-accumulation">Gradient Accumulation</h2>
+<p>So now that our baseline model is ready, let’s add gradient accumulation!</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">trainer</span> <span class="o">=</span> <span class="n">Trainer</span><span class="p">(</span><span class="n">gpus</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> 
+                  <span class="n">num_sanity_val_steps</span><span class="o">=</span><span class="mi">1</span> <span class="k">if</span> <span class="n">debug</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span> 
+                  <span class="n">accumulate_grad_batches</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>It’s as simple as adding a single parameter in PL!</p>
+
+<p>A typical workflow in PyTorch would look like:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">accumulate_grad_batches</span><span class="o">=</span><span class="mi">2</span>
+<span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">b_idx</span><span class="p">,</span> <span class="n">data</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">train_loader</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">**</span><span class="n">data</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="n">weights</span><span class="p">)</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">b_idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="n">accumulate_grad_batches</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="c1"># take optimizer every `accumulate_grad_batches` number of times
+</span>                <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+                <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+</code></pre></div></div>
+
+<p>PL nicely takes this boilerplate code away from us and provides easy access to researchers to implement gradient accumulation. It is very helpful to have larger batch sizes on a single GPU. To read more about it, refer to <a href="https://medium.com/huggingface/training-larger-batches-practical-tips-on-1-gpu-multi-gpu-distributed-setups-ec88c3e51255">this great article</a> by <a href="https://huggingface.co/">Hugging Face</a>!</p>
+
+<h2 id="16-bit-precision-training">16-bit precision training</h2>
+<p>16 bit precision can cut the memory usage by half and also speed up training dramatically. <a href="https://arxiv.org/pdf/1905.12322.pdf">Here</a> is a research paper which provides comprehensive analysis on 16-bit precision training.</p>
+
+<p>For a more gentler introduction refer to the fastai docs <a href="http://dev.fast.ai/callback.fp16#A-little-bit-of-theory">here</a> which has some great resources and explains mixed precision very nicely.</p>
+
+<p>To add 16-bit precision training, we first need to make sure that we PyTorch 1.6+. PyTorch only <a href="https://analyticsindiamag.com/pytorch-mixed-precision-training/">recently added native support</a> for Mixed Precision Training.</p>
+
+<p>To download the latest version of PyTorch simply run</p>
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="o">!</span>pip <span class="nb">install</span> <span class="nt">--pre</span> <span class="nv">torch</span><span class="o">==</span>1.7.0.dev20200701+cu101 <span class="nv">torchvision</span><span class="o">==</span>0.8.0.dev20200701+cu101 <span class="nt">-f</span> https://download.pytorch.org/whl/nightly/cu101/torch_nightly.html
+</code></pre></div></div>
+
+<p>After this, adding 16-bit training is as simple as:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">trainer</span> <span class="o">=</span> <span class="n">Trainer</span><span class="p">(</span><span class="n">gpus</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> 
+                  <span class="n">num_sanity_val_steps</span><span class="o">=</span><span class="mi">1</span> <span class="k">if</span> <span class="n">debug</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span> 
+                  <span class="n">accumulate_grad_batches</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="mi">16</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>If you want to continue to use an older version of PyTorch, refer <a href="https://pytorch-lightning.readthedocs.io/en/latest/apex.html#apex-16-bit">here</a>.</p>
+
+<p>In a typical workflow in PyTorch, we would be using <code class="highlighter-rouge">amp</code> fron NVIDIA to directly manipulate the training loop to support 16-bit precision training which can be very cumbersome and time consuming. With PyTorch now adding support for mixed precision and with PL, this is really easy to implement.</p>
+
+<h2 id="tpu-support">TPU Support</h2>
+<p>Finally, we are down to my last promise of adding TPU support and being able to run this script on TPUs!</p>
+
+<p>Here’s a <a href="https://cloud.google.com/blog/products/ai-machine-learning/what-makes-tpus-fine-tuned-for-deep-learning">post by Google</a> introducing TPUs and here is an <a href="https://medium.com/bigdatarepublic/cost-comparison-of-deep-learning-hardware-google-tpuv2-vs-nvidia-tesla-v100-3c63fe56c20f">excellent blogpost</a> comparing various pieces of hardware. TPUs are typically 5 times faster than a V100 and reduce training times significantly.</p>
+
+<p>To use a TPU, switch to <a href="https://colab.research.google.com/notebooks/basic_features_overview.ipynb">Google Colab</a> or <a href="http://kaggle.com/">Kaggle</a> notebooks with free TPU availability. For more information on TPUs, watch <a href="https://www.youtube.com/watch?v=kPMpmcl_Pyw">this video</a> by Google again.</p>
+
+<p>To train your models on TPU on PL is again very simple, download the required libraries and add a parameter to the trainer. :)</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="err">!</span><span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">xla</span><span class="o">/</span><span class="n">master</span><span class="o">/</span><span class="n">contrib</span><span class="o">/</span><span class="n">scripts</span><span class="o">/</span><span class="n">env</span><span class="o">-</span><span class="n">setup</span><span class="o">.</span><span class="n">py</span> <span class="o">-</span><span class="n">o</span> <span class="n">pytorch</span><span class="o">-</span><span class="n">xla</span><span class="o">-</span><span class="n">env</span><span class="o">-</span><span class="n">setup</span><span class="o">.</span><span class="n">py</span>
+<span class="err">!</span><span class="n">python</span> <span class="n">pytorch</span><span class="o">-</span><span class="n">xla</span><span class="o">-</span><span class="n">env</span><span class="o">-</span><span class="n">setup</span><span class="o">.</span><span class="n">py</span> <span class="o">--</span><span class="n">version</span> <span class="n">nightly</span> <span class="o">--</span><span class="n">apt</span><span class="o">-</span><span class="n">packages</span> <span class="n">libomp5</span> <span class="n">libopenblas</span><span class="o">-</span><span class="n">dev</span>
+
+<span class="n">trainer</span> <span class="o">=</span> <span class="n">Trainer</span><span class="p">(</span><span class="n">gpus</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> 
+                  <span class="n">num_sanity_val_steps</span><span class="o">=</span><span class="mi">1</span> <span class="k">if</span> <span class="n">debug</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span> 
+                  <span class="n">accumulate_grad_batches</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> 
+                  <span class="n">tpu_cores</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+</code></pre></div></div>
+<p><a href="https://www.kaggle.com/abhishek/accelerator-power-hour-pytorch-tpu">Here</a> is a notebook by <a href="https://www.linkedin.com/in/abhi1thakur/?originalSubdomain=no">Abhishek Thakur</a> for ISIC using TPUs with pure PyTorch. If you compare, you’d realise how easy it is now with PL to train on TPUs.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+<p>So I hope by now, you were able to compare the differences between PyTorch and PL and that I have convinced you enough to at least try out PL. [Here] is an excellent Kaggle competition to practice those skills and use <a href="https://www.kaggle.com/c/tpu-getting-started">PL</a>! In the first few experiments with PL, I have found my work to be more streamlined and also I have noticed a reduction in bugs. I find it easier to experiment with different batch sizes, mixed precision, loss functions, optimizers and also schedulers. PL is definitely worth a try.</p>
+
+<h2 id="credits">Credits</h2>
+<p>Thanks for reading! And please feel free to let me know via <a href="https://twitter.com/amaarora">twitter</a> if you did end up trying PyTorch Lightning and the impact this has had on your experimentation workflows. Constructive feedback is always welcome.</p>
+
+<ul>
+  <li>The implementation of Model was adapted and modified from <a href="https://www.kaggle.com/hmendonca/melanoma-neat-pytorch-lightning-native-amp">this</a> wonderful notebook on Kaggle.</li>
+</ul>
